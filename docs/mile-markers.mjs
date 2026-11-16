@@ -31,3 +31,17 @@ export function mileMarkers(segments){
   }
   return {markers,totalMiles:total/METERS_PER_MILE,truncated:total+1e-6>=next};
 }
+
+export function pointAtMile(segments,mile){
+  if(!Number.isFinite(mile)||mile<0)return null;
+  const target=mile*METERS_PER_MILE;let total=0;
+  for(const segment of segments){
+    if(target===0&&segment.length)return [...segment[0]];
+    for(let i=1;i<segment.length;i++){
+      const a=segment[i-1],b=segment[i],length=distanceMeters(a,b);
+      if(length>0&&target<=total+length+1e-6)return interpolate(a,b,Math.max(0,Math.min(1,(target-total)/length)),length);
+      total+=length;
+    }
+  }
+  return null;
+}

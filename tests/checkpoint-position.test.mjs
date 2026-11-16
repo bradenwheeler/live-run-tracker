@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {pointAtMile,distanceMeters} from '../docs/mile-markers.mjs';
+const lon=m=>m*1609.344/6371008.8*180/Math.PI;
+const route=[[[0,0],[0,lon(10)]]];
+assert.equal(pointAtMile(route,0)[0],0);
+assert.ok(Math.abs(distanceMeters([0,0],pointAtMile(route,2.5))-2.5*1609.344)<.01);
+assert.ok(Math.abs(pointAtMile(route,10)[1]-lon(10))<1e-8);
+assert.equal(pointAtMile(route,11),null);assert.equal(pointAtMile(route,-1),null);assert.equal(pointAtMile([],1),null);
+let p=pointAtMile([[[0,0],[0,lon(1)]],[[1,0],[1,lon(3)]]],2.5);assert.ok(Math.abs(p[0]-1)<1e-6);assert.ok(p[1]>0);
+p=pointAtMile([[[0,0],[0,0],[0,lon(2)]]],1);assert.ok(Math.abs(p[1]-lon(1))<1e-8);
+p=pointAtMile([[[0,179.99],[0,-179.9]]],1);assert.ok(Math.abs(p[1])>179.9);
+console.log('Passed: checkpoint position at zero, fractional miles, endpoint, route bounds, disconnected segments, duplicate points and date-line crossing.');

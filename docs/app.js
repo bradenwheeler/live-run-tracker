@@ -2,7 +2,7 @@ import {trackerRequest,retryDelay} from './tracker-request.mjs?v=1';
 import {finishEstimate} from './finish-estimate.mjs?v=2';
 import {nearestRoutePoint} from './route-progress.mjs?v=3';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
-import {mileMarkers} from './mile-markers.mjs?v=1';
+import {mileMarkers,pointAtMile} from './mile-markers.mjs?v=2';
 const $=id=>document.getElementById(id);
 const api=window.TRACKER_API?.replace(/\/$/,'');
 const map=L.map('map',{minZoom:1,maxZoom:19}).setView([20,0],2);
@@ -17,6 +17,7 @@ try{
   setTimeout(()=>{if(!gl.isStyleLoaded()){map.attributionControl.removeAttribution(credit);fallbackBasemap();}},15000);
 }catch{fallbackBasemap();}
 const mileLayer=L.layerGroup().addTo(map);
+const checkpointLayer=L.layerGroup().addTo(map),checkpointMarkers=new Map();
 const progressLayer=L.layerGroup().addTo(map);let routeSegments=[],routeMatch=null;
 function clearProgress(){progressLayer.clearLayers();routeMatch=null;for(const id of ['routeDistance','routePace','remaining','finishDuration','finishTime'])$(id).textContent='—';}
 function updateProgress(location){
@@ -25,12 +26,13 @@ function updateProgress(location){
   L.polyline([[location.lat,location.lon],match.position],{color:'#dfb873',weight:2,dashArray:'4 5',opacity:.9,interactive:false}).addTo(progressLayer);
   L.circleMarker(match.position,{radius:4,color:'#dfb873',weight:2,fillColor:'#17211f',fillOpacity:1}).bindTooltip('Nearest route point · '+match.alongMiles.toFixed(2)+' mi along route').addTo(progressLayer);
 }
-function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();routeSegments=[];clearProgress();}
+function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
 let checkpoints=[],runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
 function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
 function renderCheckpoints(now){
   const list=$('checkpointRows');list.replaceChildren();
+  const ids=new Set(checkpoints.map(cp=>cp.id));for(const [id,item] of checkpointMarkers){if(!ids.has(id)){checkpointLayer.removeLayer(item.marker);checkpointMarkers.delete(id);}}
   if(!checkpoints.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No checkpoints added.';list.append(empty);return;}
   for(const cp of checkpoints){
     const row=document.createElement('div'),info=document.createElement('div'),name=document.createElement('strong'),mile=document.createElement('span'),arrival=document.createElement('div'),status=document.createElement('small'),time=document.createElement('span');
@@ -42,6 +44,19 @@ function renderCheckpoints(now){
       status.textContent=estimate?'EST. ARRIVAL':'AWAITING UPDATES';at=estimate?.finishAt??null;
     }
     time.textContent=at===null?'—':new Date(at*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:cp.crossedAt!==null?'2-digit':undefined,timeZoneName:'short'});
+    let entry=checkpointMarkers.get(cp.id);
+    if(!entry&&routeSegments.length){
+      const position=pointAtMile(routeSegments,cp.mile);
+      if(position){const label=document.createElement('span');label.textContent=cp.name+' · '+cp.mile+' mi';
+        const pin=L.marker(position,{title:cp.name+' — Mile '+cp.mile,keyboard:true,zIndexOffset:1500}).bindTooltip(label,{permanent:true,direction:'top',offset:[0,-15],className:'checkpoint-map-label'}).bindPopup(document.createElement('div')).addTo(checkpointLayer);
+        entry={marker:pin,crossed:null};checkpointMarkers.set(cp.id,entry);
+      }
+    }
+    if(entry){const crossed=cp.crossedAt!==null;
+      if(entry.crossed!==crossed){entry.marker.setIcon(L.divIcon({className:'checkpoint-map-marker'+(crossed?' crossed':''),html:'<span aria-hidden="true">◆</span>',iconSize:[28,28],iconAnchor:[14,14]}));entry.crossed=crossed;}
+      const popup=document.createElement('div'),heading=document.createElement('strong'),detail=document.createElement('p'),when=document.createElement('p');
+      heading.textContent=cp.name;detail.textContent='Mile '+cp.mile;when.textContent=status.textContent+': '+time.textContent;popup.append(heading,detail,when);entry.marker.setPopupContent(popup);
+    }
     info.append(name,mile);arrival.append(status,time);row.append(info,arrival);list.append(row);
   }
 }
@@ -86,6 +101,7 @@ try{
   const data=await trackerRequest(api+'/location');checkpoints=data.checkpoints||[];runStats=data.stats||null;statsReceivedAt=performance.now();updateStats();
   let routeError=false;try{await syncRoute(data.routeVersion??null);}catch{clearPlanned();routeVersion=undefined;$('routeName').textContent='Route unavailable — retrying';$('routeFit').disabled=true;routeError=true;retrySoon();}
   if(!routeError)failures=0;
+  renderCheckpoints(runStats?runStats.serverTime+(performance.now()-statsReceivedAt)/1000:NaN);
   const p=data.point;
   if(data.status==='paused'){clearPoint();clearTrack();$('badge').textContent='NOT SHARING';$('status').textContent='Paused';if(planned)$('overlay').hidden=true;else message(routeError?'Route unavailable — retrying':'Sharing is paused');return;}
   drawTrack(data.track||[],p);
