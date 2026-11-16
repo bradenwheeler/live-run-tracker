@@ -1,3 +1,4 @@
+import {inPause,crossesPause} from './session-pauses.mjs';
 import {appliedSettings,saveSetup,setupKey} from "./saved-setups.mjs";
 import {checkpointMap} from "./checkpoint-map.mjs";
 import {nearestRoutePoint} from "../docs/route-progress.mjs";
@@ -59,7 +60,7 @@ export class Tracker {
       const route=await this.ctx.storage.get("route");
       if(route&&!(await this.ctx.storage.get("setupIndex")))await saveSetup(this.ctx.storage,state);
       const track=state.until>now ? await this.ctx.storage.get("track")||[] : [];
-      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,checkpoints:await checkpointView(this.ctx.storage,state,route,await this.ctx.storage.get("checkpoints"),now),stats:state.until>now?{startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
+      return json({status:state.until<=now?"paused":state.pausedAt!=null?"session-paused":point?"live":"waiting",point:state.until>now&&state.pausedAt==null?point:null,track,checkpoints:await checkpointView(this.ctx.storage,state,route,await this.ctx.storage.get("checkpoints"),now),stats:state.until>now?{paused:state.pausedAt!=null,startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
     }
     const text=await req.text();let data;
     try{data=text?JSON.parse(text):null;}catch{return json({error:"Invalid JSON"},400);}
@@ -117,6 +118,13 @@ export class Tracker {
       }
       config.version=crypto.randomUUID();await this.ctx.storage.put("checkpoints",config);await saveSetup(this.ctx.storage,state);return json(config.items);
     }
+    if(path==="/session"&&data?.action!==undefined){
+      if(!['pause','resume'].includes(data.action))return json({error:"Unknown session action."},400);
+      if(state.until<=now)return json({error:"Start a new run first."},409);
+      if(data.action==='pause'&&state.pausedAt==null)state.pausedAt=now;
+      if(data.action==='resume'&&state.pausedAt!=null){state.pauseIntervals=[...(state.pauseIntervals||[]),[state.pausedAt,now]];state.pausedAt=null;}
+      await this.ctx.storage.put('state',state);
+    }
     if(path==="/session"&&data?.hours!==undefined){
       if(state.until<=now)return json({error:"Start a recording session first."},409);
       if(!Number.isInteger(data.hours)||data.hours<1||data.hours>72)return json({error:"Choose 1–72 hours."},400);
@@ -128,7 +136,7 @@ export class Tracker {
       await this.ctx.storage.put("track",rebuilt.track);
       await this.ctx.storage.put("state",state);await this.ctx.storage.setAlarm(until*1000);await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));await saveSetup(this.ctx.storage,state);
     }
-    if(path==="/session")return json({active:state.until>now,startedAt:state.until>now?state.since:null,recordingSince:state.until>now?state.captureAt:null,expiresAt:state.until>now?state.until:null,serverTime:now});
+    if(path==="/session")return json({active:state.until>now,paused:state.until>now&&state.pausedAt!=null,startedAt:state.until>now?state.since:null,recordingSince:state.until>now?state.captureAt:null,expiresAt:state.until>now?state.until:null,serverTime:now});
     if(path==="/start-time"){
       if(state.until<=now)return json({error:"Start recording before editing the race start."},409);
       if(!Number.isInteger(data?.startedAt)||data.startedAt<0||data.startedAt>now)return json({error:"Choose a valid start date and time in the past."},400);
@@ -183,8 +191,9 @@ export class Tracker {
     if(data?._type!=="location") return json([]);
     if(![data.lat,data.lon,data.tst].every(Number.isFinite)||Math.abs(data.lat)>90||Math.abs(data.lon)>180||!Number.isInteger(data.tst)||data.tst>now+30) return json({error:"Invalid location"},400);
     // Accept queued, out-of-order fixes throughout the active recording window.
-    if(state.until<=now||data.tst<(state.captureAt||state.since)||data.tst>state.until)return json([]);
+    if(state.until<=now||inPause(state,data.tst)||data.tst<(state.captureAt||state.since)||data.tst>state.until)return json([]);
     const fix={lat:Math.round(data.lat*1e6)/1e6,lon:Math.round(data.lon*1e6)/1e6,tst:data.tst,acc:Number.isFinite(data.acc)&&data.acc>=0?Math.min(data.acc,100000):null};
+    if(crossesPause(state,state.point,fix))fix.breakBefore=true;
     const key='fix:'+String(Math.floor(fix.tst/60)).padStart(12,'0'),bucket=await this.ctx.storage.get(key)||[];
     if(bucket.some(p=>p.tst===fix.tst))return json([]);
     bucket.push(fix);await this.ctx.storage.put(key,bucket);
@@ -196,7 +205,7 @@ export class Tracker {
       state.historyDirty=true;await this.ctx.storage.put("state",state);return json([]);
     }else{
       state.distanceMeters=measuredDistance(state,fix,track);state.point=fix;
-      if(!track.length||fix.tst-track.at(-1).tst>=(state.trackStep||30))track.push({lat:fix.lat,lon:fix.lon,tst:fix.tst});
+      if(!track.length||fix.breakBefore||fix.tst-track.at(-1).tst>=(state.trackStep||30))track.push({lat:fix.lat,lon:fix.lon,tst:fix.tst,...(fix.breakBefore?{breakBefore:true}:{})});
     }
     state.distanceVersion=2;
     await this.ctx.storage.put("state",state);await this.ctx.storage.put("track",track.slice(-1440));

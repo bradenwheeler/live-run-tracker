@@ -1,3 +1,4 @@
+import {inPause,crossesPause} from './session-pauses.mjs';
 import {edgeDistance} from './run-metrics.mjs';
 export async function rawEntries(storage){
   const entries=new Map();let after;
@@ -9,11 +10,12 @@ export async function readFixes(storage,state){
   if(state.point)points.push(state.point);
   for(const bucket of (await rawEntries(storage)).values())points.push(...bucket);
   const unique=new Map(points.filter(p=>p.tst>=(state.captureAt||state.since)).map(p=>[p.tst,p]));
-  return [...unique.values()].sort((a,b)=>a.tst-b.tst);
+  const sorted=[...unique.values()].filter(p=>!inPause(state,p.tst)).sort((a,b)=>a.tst-b.tst);
+  return sorted.map((p,i)=>({...p,...(crossesPause(state,sorted[i-1],p)?{breakBefore:true}:{})}));
 }
 export function rebuildRun(fixes,start,step){
   const eligible=fixes.filter(p=>p.tst>=start);let distanceMeters=0;const track=[];
-  for(let i=0;i<eligible.length;i++){const p=eligible[i];if(i)distanceMeters+=edgeDistance(eligible[i-1],p);if(!track.length||p.tst-track.at(-1).tst>=step)track.push({lat:p.lat,lon:p.lon,tst:p.tst});}
+  for(let i=0;i<eligible.length;i++){const p=eligible[i];if(i)distanceMeters+=edgeDistance(eligible[i-1],p);if(!track.length||p.breakBefore||p.tst-track.at(-1).tst>=step)track.push({lat:p.lat,lon:p.lon,tst:p.tst,...(p.breakBefore?{breakBefore:true}:{})});}
   return {point:eligible.at(-1)||null,distanceMeters,distanceVersion:2,track:track.slice(-1440)};
 }
 export async function clearSession(storage){

@@ -1,5 +1,5 @@
 import {trackerRequest,retryDelay} from './tracker-request.mjs?v=1';
-import {finishEstimate} from './finish-estimate.mjs?v=2';
+import {finishEstimate} from './finish-estimate.mjs?v=3';
 import {nearestRoutePoint} from './route-progress.mjs?v=3';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers,pointAtMile} from './mile-markers.mjs?v=2';
@@ -82,8 +82,8 @@ function updateStats(){
   const elapsed=Math.max(0,now-runStats.startedAt);
   $('elapsed').textContent=elapsedLabel(elapsed);$('savedStart').textContent='Start '+new Date(runStats.startedAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
   $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';$('distanceCoverage').textContent=runStats.distanceComplete===false?'Recording began after the race start. Earlier GPS distance is missing; average pace uses incomplete GPS coverage. Finish estimates use route progress.':'';
-  $('pace').textContent=runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,runStats.distanceMeters):'—';
-  $('routePace').textContent=routeMatch&&runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,routeMatch.alongMeters):'—';
+  $('pace').textContent=!runStats.paused&&runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,runStats.distanceMeters):'—';
+  $('routePace').textContent=routeMatch&&!runStats.paused&&runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,routeMatch.alongMeters):'—';
   const estimate=finishEstimate(runStats,routeMatch,now);
   if(estimate){$('finishDuration').textContent=elapsedLabel(estimate.secondsRemaining);$('finishTime').textContent=new Date(estimate.finishAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});}
 }
@@ -95,7 +95,7 @@ function drawTrack(points,current){
   if(actual)map.removeLayer(actual);actual=null;track=points;
   const pts=[...points];if(current&&(!pts.length||current.tst>pts[pts.length-1].tst))pts.push(current);
   const segments=[];let segment=[];let previous;
-  for(const p of pts){if(previous&&p.tst-previous.tst>900){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
+  for(const p of pts){if(previous&&(p.breakBefore||p.tst-previous.tst>900)){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
   if(segments.length)actual=L.polyline(segments,{color:'#6ed2a4',weight:4,opacity:.9}).addTo(map);
 }
 $('refreshNow').onclick=()=>refresh();
@@ -118,6 +118,7 @@ try{
   const p=data.point;
   if(data.status==='paused'){clearPoint();clearTrack();$('badge').textContent='NOT SHARING';$('status').textContent='Paused';if(planned)$('overlay').hidden=true;else message(routeError?'Route unavailable — retrying':'Sharing is paused');return;}
   drawTrack(data.track||[],p);
+  if(data.status==='session-paused'){clearPoint();const last=(data.track||[]).at(-1);if(last)updateProgress(last);$('badge').textContent='PAUSED';$('status').textContent='Session paused';$('time').textContent=runStats?.lastFixAt?new Date(runStats.lastFixAt*1000).toLocaleTimeString():'—';if(planned||actual)$('overlay').hidden=true;else message('Session paused');return;}
   if(!p||Date.now()/1000-p.tst>900){clearPoint();$('badge').textContent='WAITING';$('status').textContent='Waiting for location';if(planned||actual)$('overlay').hidden=true;else message('Waiting for a fresh location');return;}
   point=p;updateProgress(p);$('overlay').hidden=true;$('badge').textContent=Date.now()/1000-p.tst>180?'LAST KNOWN':'SHARING';$('status').textContent=Date.now()/1000-p.tst>180?'Last known location':'Receiving updates';$('time').textContent=new Date(p.tst*1000).toLocaleTimeString();
   if(marker)marker.setLatLng([p.lat,p.lon]);else marker=L.circleMarker([p.lat,p.lon],{radius:9,color:'#13241e',weight:3,fillColor:'#6ed2a4',fillOpacity:1}).addTo(map);
