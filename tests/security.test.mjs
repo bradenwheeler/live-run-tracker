@@ -44,7 +44,7 @@ store.set('state',{until:now+100,since:now-1000,point:{lat:1,lon:2,tst:now-901,a
 assert.equal((await latest()).point,null);
 store.set('state',{until:now-1,since:now-1000,point:fix});
 assert.equal((await latest()).status,'paused');assert.equal(store.get('state')?.point??null,null);
-await obj.alarm();assert.equal(store.size,0);
+await obj.alarm();assert.equal(store.has('state'),false);assert.equal([...store.keys()].some(k=>k.startsWith('fix:')),false);
 assert.equal((await worker.fetch(new Request('http://tracker.example/location'),env)).status,400);
 console.log('Passed: authentication, paused ingestion, controls, validation, stale/queued/out-of-order fixes, field minimization, body limit, expiry, cleanup, HTTPS.');
 

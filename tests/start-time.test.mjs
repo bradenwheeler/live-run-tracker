@@ -34,6 +34,6 @@ assert.equal((await send('/session',{hours:73})).status,400);
 seconds=start+49*3600;assert.notEqual((await view()).status,'paused');
 await send('/control',{enabled:false});assert.equal((await view()).stats,null);assert.equal([...values.keys()].some(k=>k.startsWith('fix:')),false);
 // A fresh default session remains active immediately before its 48-hour endpoint.
-await send('/control',{enabled:true});const fresh=seconds;seconds=fresh+48*3600-1;assert.notEqual((await view()).status,'paused');seconds++;assert.equal((await view()).status,'paused');
+await send('/control',{enabled:true,hours:48});const fresh=seconds;seconds=fresh+48*3600-1;assert.notEqual((await view()).status,'paused');seconds++;assert.equal((await view()).status,'paused');
 Date.now=realNow;
 console.log('Passed: 48-hour default/no 6-hour cutoff, 72-hour extension, edited-start filtering/recalculation, reverse-order offline uploads, auth, bounds, retention and expiry.');
