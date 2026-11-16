@@ -3,6 +3,8 @@ import {finishEstimate} from './finish-estimate.mjs?v=2';
 import {nearestRoutePoint} from './route-progress.mjs?v=3';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers,pointAtMile} from './mile-markers.mjs?v=2';
+import {completedRoute} from './course-progress.mjs?v=1';
+import {renderElevation} from './elevation-profile.mjs?v=1';
 const $=id=>document.getElementById(id);
 const api=window.TRACKER_API?.replace(/\/$/,'');
 const map=L.map('map',{minZoom:1,maxZoom:19}).setView([20,0],2);
@@ -26,15 +28,16 @@ function drawEndpoints(segments){
   }
 }
 const checkpointLayer=L.layerGroup().addTo(map),checkpointMarkers=new Map();
-const progressLayer=L.layerGroup().addTo(map);let routeSegments=[],routeMatch=null;
-function clearProgress(){progressLayer.clearLayers();routeMatch=null;for(const id of ['routeDistance','routePace','remaining','finishDuration','finishTime'])$(id).textContent='—';}
+const completedLayer=L.layerGroup().addTo(map);
+const progressLayer=L.layerGroup().addTo(map);let routeSegments=[],routeMatch=null,routeProfile=null;
+function clearProgress(){progressLayer.clearLayers();completedLayer.clearLayers();routeMatch=null;renderElevation($('elevationProfile'),$('elevationCurrent'),routeProfile,null);for(const id of ['routeDistance','routePace','remaining','finishDuration','finishTime'])$(id).textContent='—';}
 function updateProgress(location){
   clearProgress();const match=nearestRoutePoint(routeSegments,location);if(!match)return;
-  routeMatch=match;$('routeDistance').textContent=match.alongMiles.toFixed(2)+' mi';$('remaining').textContent=(match.remainingMeters/1609.344).toFixed(2)+' mi';updateStats();
+  routeMatch=match;const completed=completedRoute(routeSegments,match.alongMeters,match.position);if(completed.length)L.polyline(completed,{color:'#6ed2a4',weight:5,opacity:1,interactive:false}).addTo(completedLayer);renderElevation($('elevationProfile'),$('elevationCurrent'),routeProfile,match.alongMeters);$('routeDistance').textContent=match.alongMiles.toFixed(2)+' mi';$('remaining').textContent=(match.remainingMeters/1609.344).toFixed(2)+' mi';updateStats();
   L.polyline([[location.lat,location.lon],match.position],{color:'#dfb873',weight:2,dashArray:'4 5',opacity:.9,interactive:false}).addTo(progressLayer);
   L.circleMarker(match.position,{radius:4,color:'#dfb873',weight:2,fillColor:'#17211f',fillOpacity:1}).bindTooltip('Nearest route point · '+match.alongMiles.toFixed(2)+' mi along route').addTo(progressLayer);
 }
-function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();endpointLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];clearProgress();}
+function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();endpointLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];routeProfile=null;clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
 let checkpoints=[],runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
 function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
@@ -103,7 +106,7 @@ async function syncRoute(version){
   if(version===routeVersion)return;
   const route=await trackerRequest(api+'/route');
   clearPlanned();
-  if(route){routeSegments=route.segments;drawEndpoints(route.segments);planned=L.polyline(route.segments,{color:'#a5a0f5',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
+  if(route){routeSegments=route.segments;routeProfile=route;renderElevation($('elevationProfile'),$('elevationCurrent'),routeProfile,null);drawEndpoints(route.segments);planned=L.polyline(route.segments,{color:'#a5a0f5',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
   else{routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;}
 }
 async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;clearTimeout(retryTimer);

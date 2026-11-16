@@ -5,7 +5,7 @@ import {parseGpxSource} from '../worker/gpx.mjs';
 import vm from 'node:vm';
 // The browser parser must remain plain source, without bundled runtime helpers.
 assert.ok(adminHtml.includes('const parseGpx='+parseGpxSource+';'));
-const parser=vm.runInNewContext('('+parseGpxSource+')',{DOMParser:class {parseFromString(){return {documentElement:{localName:'gpx'},getElementsByTagNameNS(_,name){if(name==='parsererror')return [];if(name==='trkseg')return [{getElementsByTagNameNS(){return [0,1].map(i=>({getAttribute:k=>String(i),}));}}];return [];}};}}});
+const parser=vm.runInNewContext('('+parseGpxSource+')',{DOMParser:class {parseFromString(){return {documentElement:{localName:'gpx'},getElementsByTagNameNS(_,name){if(name==='parsererror')return [];if(name==='trkseg')return [{getElementsByTagNameNS(){return [0,1].map(i=>({getAttribute:k=>String(i),getElementsByTagNameNS:()=>[],}));}}];return [];}};}}});
 assert.equal(parser('<gpx/>').points,2);
 // Keep session-boundary tests deterministic even if the runner crosses a second.
 const realNow=Date.now, fixedNow=realNow();Date.now=()=>fixedNow;

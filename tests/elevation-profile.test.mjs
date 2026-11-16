@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {elevationData,elevationAt} from '../docs/elevation-profile.mjs';
+const route={segments:[[[0,0],[0,.01],[0,.02]],[[1,1],[1,1.01]]],elevations:[[100,200,null],[300,400]]};
+const data=elevationData(route);
+assert.equal(data.runs.length,2);
+assert.equal(data.points.length,4);
+assert.ok(data.totalMeters>3300&&data.totalMeters<3400,'separate segment gap does not count as route distance');
+assert.equal(elevationAt(data,data.runs[0][1].meters/2),150);
+assert.equal(elevationAt(data,data.runs[0][1].meters+100),null,'missing elevation is not bridged');
+assert.equal(elevationData({segments:route.segments}).points.length,0);
+assert.equal(elevationAt(data,0),100);
+console.log('Elevation profile distance, interpolation and missing data passed');

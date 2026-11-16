@@ -147,12 +147,19 @@ export class Tracker {
         for(const pt of seg){if(!Array.isArray(pt)||pt.length!==2||!pt.every(Number.isFinite)||Math.abs(pt[0])>90||Math.abs(pt[1])>180) return json({error:"Invalid route coordinate"},400);clean.push(pt.map(n=>Math.round(n*1e6)/1e6));if(++count>2500)return json({error:"Route exceeds 2,500 map points"},400);}
         segments.push(clean);
       }
+      let elevations;
+      if(data.elevations!==undefined){
+        if(!Array.isArray(data.elevations)||data.elevations.length!==segments.length||data.elevations.some((s,i)=>!Array.isArray(s)||s.length!==segments[i].length||s.some(v=>v!==null&&(!Number.isFinite(v)||v< -12000||v>10000))))return json({error:"Invalid route elevation"},400);
+        elevations=data.elevations.map(s=>s.map(v=>v===null?null:Math.round(v*10)/10));
+      }
+      const previousRoute=await this.ctx.storage.get('route');
+      const sameGeometry=data.elevations!==undefined&&previousRoute&&JSON.stringify(previousRoute.segments)===JSON.stringify(segments);
       const setupIndex=await this.ctx.storage.get('setupIndex')||[];
-      if(setupIndex.length>=50)return json({error:"Delete an unused saved setup before uploading another GPX."},400);
+      if(!sameGeometry&&setupIndex.length>=50)return json({error:"Delete an unused saved setup before uploading another GPX."},400);
       const fileName=typeof data.fileName==='string'?data.fileName.split(/[\\/]/).at(-1).slice(0,180):data.name.trim()+'.gpx';
-      const route={name:data.name.trim(),fileName,segments,version:crypto.randomUUID(),points:count};
+      const route={name:data.name.trim(),fileName,segments,...(elevations?{elevations}:{}),version:crypto.randomUUID(),points:count};
       if(new TextEncoder().encode(JSON.stringify(route)).length>100000)return json({error:"Route is too large"},400);
-      await this.ctx.storage.put("route",route);await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("checkpointCrossings");await this.ctx.storage.delete("activeSetup");await saveSetup(this.ctx.storage,state);return json({name:route.name,points:count});
+      await this.ctx.storage.put("route",route);if(!sameGeometry){await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("activeSetup");}await this.ctx.storage.delete("checkpointCrossings");await saveSetup(this.ctx.storage,state);return json({name:route.name,points:count,checkpointsPreserved:!!sameGeometry});
     }
     if(path==="/control") {
       if(!data || typeof data.enabled!=="boolean") return json({error:"enabled must be boolean"},400);
