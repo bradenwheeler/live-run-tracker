@@ -17,6 +17,14 @@ try{
   setTimeout(()=>{if(!gl.isStyleLoaded()){map.attributionControl.removeAttribution(credit);fallbackBasemap();}},15000);
 }catch{fallbackBasemap();}
 const mileLayer=L.layerGroup().addTo(map);
+const endpointLayer=L.layerGroup().addTo(map);
+function drawEndpoints(segments){
+  const parts=segments.filter(segment=>segment.length);if(!parts.length)return;
+  const endpoints=[['start','START',parts[0][0],[94,20]],['finish','FINISH',parts[parts.length-1].at(-1),[0,20]]];
+  for(const [kind,label,position,anchor] of endpoints){
+    L.marker(position,{icon:L.divIcon({className:'route-endpoint '+kind,html:'<span class="endpoint-dot" aria-hidden="true"></span><span class="endpoint-label">'+label+'</span>',iconSize:[94,40],iconAnchor:anchor}),title:'Route '+label.toLowerCase(),keyboard:true,zIndexOffset:2500}).bindPopup('Planned route '+label.toLowerCase()).addTo(endpointLayer);
+  }
+}
 const checkpointLayer=L.layerGroup().addTo(map),checkpointMarkers=new Map();
 const progressLayer=L.layerGroup().addTo(map);let routeSegments=[],routeMatch=null;
 function clearProgress(){progressLayer.clearLayers();routeMatch=null;for(const id of ['routeDistance','routePace','remaining','finishDuration','finishTime'])$(id).textContent='—';}
@@ -26,7 +34,7 @@ function updateProgress(location){
   L.polyline([[location.lat,location.lon],match.position],{color:'#dfb873',weight:2,dashArray:'4 5',opacity:.9,interactive:false}).addTo(progressLayer);
   L.circleMarker(match.position,{radius:4,color:'#dfb873',weight:2,fillColor:'#17211f',fillOpacity:1}).bindTooltip('Nearest route point · '+match.alongMiles.toFixed(2)+' mi along route').addTo(progressLayer);
 }
-function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];clearProgress();}
+function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();endpointLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
 let checkpoints=[],runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
 function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
@@ -95,7 +103,7 @@ async function syncRoute(version){
   if(version===routeVersion)return;
   const route=await trackerRequest(api+'/route');
   clearPlanned();
-  if(route){routeSegments=route.segments;planned=L.polyline(route.segments,{color:'#a5a0f5',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
+  if(route){routeSegments=route.segments;drawEndpoints(route.segments);planned=L.polyline(route.segments,{color:'#a5a0f5',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
   else{routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;}
 }
 async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;clearTimeout(retryTimer);
