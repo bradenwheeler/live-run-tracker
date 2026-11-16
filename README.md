@@ -74,7 +74,7 @@ The map projects the latest visible OwnTracks fix onto the nearest segment of th
 
 ## Route distance and finish estimates
 
-The public display now shows continuous estimated route mileage from the GPX start, remaining route mileage, estimated time to finish, and the estimated finish date/time in each viewer’s timezone. The nearest-route projection still drives route progress, including its ambiguity at crossings. Finish duration is remaining route meters × (elapsed seconds / actual GPS meters traveled). The projected route mileage is not used as the pace denominator. Estimates require 0.1 actual mile, a recent fix (within three minutes), and an active session. Estimates clear when unavailable, paused, expired, or disconnected. They assume the current overall average pace continues, including stops; the future finish time is an estimate, not an observed actual finish.
+The public display now shows continuous estimated route mileage from the GPX start, remaining route mileage, estimated time to finish, and the estimated finish date/time in each viewer’s timezone. The nearest-route projection still drives route progress, including its ambiguity at crossings. Finish duration is remaining route meters × (elapsed seconds / projected route meters covered). Average pace still uses actual GPS distance; the finish calculation uses route progress instead. Estimates require 0.1 mile of projected route progress, a recent fix (within three minutes), and an active session. Estimates clear when unavailable, paused, expired, or disconnected. They assume the current overall average pace continues, including stops; the future finish time is an estimate, not an observed actual finish.
 
 ## Connection recovery and sparse reports
 

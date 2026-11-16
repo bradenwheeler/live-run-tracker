@@ -1,5 +1,5 @@
 import {trackerRequest,retryDelay} from './tracker-request.mjs?v=1';
-import {finishEstimate} from './finish-estimate.mjs?v=1';
+import {finishEstimate} from './finish-estimate.mjs?v=2';
 import {nearestRoutePoint} from './route-progress.mjs?v=2';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers} from './mile-markers.mjs?v=1';
@@ -36,7 +36,7 @@ function updateStats(){
   if(now>=runStats.expiresAt){runStats=null;clearProgress();updateStats();return;}
   const elapsed=Math.max(0,now-runStats.startedAt);
   $('elapsed').textContent=elapsedLabel(elapsed);$('savedStart').textContent='Start '+new Date(runStats.startedAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
-  $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';$('distanceCoverage').textContent=runStats.distanceComplete===false?'Recording began after the race start. Earlier distance is missing; pace and finish estimates use incomplete GPS coverage.':'';
+  $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';$('distanceCoverage').textContent=runStats.distanceComplete===false?'Recording began after the race start. Earlier GPS distance is missing; average pace uses incomplete GPS coverage. Finish estimates use route progress.':'';
   $('pace').textContent=runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,runStats.distanceMeters):'—';
   const estimate=finishEstimate(runStats,routeMatch,now);
   if(estimate){$('finishDuration').textContent=elapsedLabel(estimate.secondsRemaining);$('finishTime').textContent=new Date(estimate.finishAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});}
