@@ -1,6 +1,17 @@
 # Live run tracker
 
-Public latest-location map for Braden. GitHub Pages serves `docs/`. A Cloudflare Worker with a SQLite-backed Durable Object receives OwnTracks HTTPS updates. No coordinates or credentials are committed to GitHub. No route history, GPX, or ETAs yet.
+Public latest-location map for Braden. GitHub Pages serves `docs/`. A Cloudflare Worker with a SQLite-backed Durable Object receives OwnTracks HTTPS updates. No coordinates or credentials are committed to GitHub. Supports a public planned GPX route and a recorded path for the active run. No checkpoint ETAs yet.
+
+## Upload a route and compare your run
+
+1. Open https://live-run-tracker.bradenwheeler.workers.dev/admin and enter your existing ADMIN_TOKEN.
+2. Choose a `.gpx` file under 5 MB. The page supports GPX tracks (`trk/trkseg/trkpt`) and routes (`rte/rtept`), including XML namespaces and separate segments. Files containing only waypoints are rejected.
+3. Review the route name and point count, then press **Upload & publish route**. Only sanitized coordinates and the route name go to Cloudflare; original GPX timestamps, descriptions, extensions and device metadata stay in your browser. Large routes are sampled to at most 2,500 map points, preserving segment endpoints. Sampling can cut corners, so use the original GPX for navigation.
+4. View https://bradenwheeler.github.io/live-run-tracker/ . The planned route is dashed blue. During an active session, OwnTracks updates add a solid green recorded path and the latest-position marker. **Show full route** fits the route; **Center on runner** returns to the latest position. The page polls every minute while visible and reloads route geometry only when it changes.
+5. **Start new run** clears the previous actual path and begins a six-hour sharing session. The existing OwnTracks connection settings stay the same. The server records up to one breadcrumb per 30 seconds (maximum 720 points), starting after deployment and activation; it cannot reconstruct past runs. Long gaps over three minutes are not joined by a line.
+6. **Stop & clear actual path** removes the marker and recorded path. The planned route remains public while sharing is paused. Use **Remove public route** to remove it. A replacement route changes the plan without resetting the current run.
+
+The route, including its start and finish, is public once uploaded. No uploaded GPX or run coordinates are committed to GitHub. All write operations require the admin token except phone ingestion, which has its separate password. The route is stored separately so session expiry does not erase it. There is no route archive or completed-run archive.
 
 ## Deploy (free accounts)
 
@@ -35,7 +46,7 @@ Start sharing at `/admin`, then manually publish a fresh location from OwnTracks
 
 ## Privacy and failure behavior
 
-Sharing is OFF by default. Every start resets the point and enables publication for at most six hours; start again to extend a longer run. Pause clears the server's point. Fixes older than 15 minutes, from before the sharing session, or out of order are discarded. The public API exposes only latitude, longitude, fix timestamp and accuracy. Empty and non-location messages are acknowledged without storing them. Credentials, battery status, device IDs, and topics are never returned publicly. Expired locations disappear; server storage is cleared when the six-hour alarm runs, or on the next request after expiry. Only one point is retained, no history.
+Sharing is OFF by default. Every start resets the point and enables publication for at most six hours; start again to extend a longer run. Pause clears the server's point and recorded path. Fixes older than 15 minutes, from before the sharing session, or out of order are discarded. The live marker exposes latitude, longitude, fix timestamp and accuracy; breadcrumbs expose coordinates and fix timestamps. The route API exposes the sanitized route name, segments and revision. Empty and non-location messages are acknowledged without storing them. Credentials, battery status, device IDs, and topics are never returned publicly. Expired locations disappear; server storage is cleared when the six-hour alarm runs, or on the next request after expiry. An active run retains up to 720 breadcrumbs; those clear on stop or expiry. The separately uploaded planned route persists until explicitly removed.
 
 Anyone can copy a public location; stopping cannot retract copies. Map tiles are requested from OpenStreetMap, which can observe the map area and visitor IP. Avoid starting at home or sensitive places. There is no intentional publication delay in this version. The map labels old fixes as “Last known.” A connection failure clears the displayed point instead of implying it is current. This is not an emergency service.
 
@@ -43,7 +54,7 @@ Anyone can copy a public location; stopping cannot retract copies. Map tiles are
 
 As checked November 15, 2026: Workers Free includes 100,000 requests/day. SQLite Durable Objects Free includes 100,000 requests/day, 100,000 written rows/day, 5 million read rows/day, 13,000 GB-seconds/day and 5 GB storage. These are account-wide allowances; other projects share them. Exceeding a free limit can stop service until reset, rather than bill for overages on the Free plan.
 
-A phone at one update/30 seconds for 24 hours uses 2,880 requests. Ten viewers for eight hours at one poll/minute add 4,800, totaling about 7,680 requests/day plus starts and retries. The map stops polling hidden tabs. One small point is overwritten per accepted fix, so storage does not grow over time. Actual OwnTracks update frequency can be higher because displacement also triggers reports. Public traffic or abuse can exhaust limits. Check Cloudflare usage before a large event. No paid plan, custom domain, per-fix GitHub commits, scheduled Actions polling, or metered commercial map API is required.
+A phone at one update/30 seconds for 24 hours uses 2,880 requests. Ten viewers for eight hours at one poll/minute add 4,800, totaling about 7,680 requests/day plus starts and retries. The map stops polling hidden tabs. The latest point is overwritten per accepted fix; a bounded breadcrumb array is additionally written no more than once per 30 seconds. The single planned route is capped at 2,500 points / 100 KB. Total storage remains bounded, with no unbounded archive. Each SQLite-backed key-value read/write is billed in rows, including the bounded breadcrumb and route records. Actual OwnTracks update frequency can be higher because displacement also triggers reports. Public traffic or abuse can exhaust limits. Check Cloudflare usage before a large event. No paid plan, custom domain, per-fix GitHub commits, scheduled Actions polling, or metered commercial map API is required.
 
 GitHub Pages uses branch deployment; the only GitHub Action runs tests on code changes. OpenStreetMap's community tiles are appropriate for a small personal map, subject to their usage policy; high traffic would require reviewing the tile provider.
 
@@ -51,4 +62,4 @@ Sources: [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/
 
 ## Tests
 
-`npm test` runs security and lifecycle tests with an in-memory Durable Object storage adapter. Tests cover authentication separation, HTTPS enforcement, body size, coordinate validation, stale/out-of-order/queued points, default pause, explicit clearing and automatic expiry. They do not replace a deployed Cloudflare integration test or the real iPhone background/cellular acceptance test above.
+`npm test` runs security and lifecycle tests with an in-memory Durable Object storage adapter. Tests cover authentication separation, HTTPS enforcement, body size, coordinate validation, stale/out-of-order/queued points, default pause, explicit clearing, automatic expiry, admin-only route uploads, route limits, segment preservation, route persistence/removal, bounded breadcrumbs, and delayed alarm safety. Browser checks additionally verify GPX tracks/routes, namespaced XML, malformed files, invalid coordinates, sampling, endpoint preservation, file selection and map rendering. They do not replace a deployed Cloudflare integration test or the real iPhone background/cellular acceptance test above.

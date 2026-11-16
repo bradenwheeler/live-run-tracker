@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import worker,{Tracker} from '../worker/index.mjs';
 const store=new Map();let alarm;
-const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>store.get(k),put:async(k,v)=>store.set(k,structuredClone(v)),deleteAll:async()=>store.clear(),setAlarm:async v=>{alarm=v;},deleteAlarm:async()=>{alarm=null;}}};
+const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>store.get(k),put:async(k,v)=>store.set(k,structuredClone(v)),deleteAll:async()=>store.clear(),delete:async k=>store.delete(k),setAlarm:async v=>{alarm=v;},deleteAlarm:async()=>{alarm=null;}}};
 const obj=new Tracker(ctx);
 const env={OWNTRACKS_PASSWORD:'test-only-phone-password',ADMIN_TOKEN:'test-only-admin-token',TRACKER:{idFromName:x=>x,get:()=>({fetch:r=>obj.fetch(r)})}};
 const req=(path,body,auth)=>new Request('https://tracker.example'+path,{method:body===undefined?'GET':'POST',headers:auth?{Authorization:auth}:{},body:body===undefined?undefined:JSON.stringify(body)});
@@ -36,3 +36,34 @@ assert.equal((await latest()).status,'paused');assert.equal(store.get('state').p
 await obj.alarm();assert.equal(store.size,0);
 assert.equal((await worker.fetch(new Request('http://tracker.example/location'),env)).status,400);
 console.log('Passed: authentication, paused ingestion, controls, validation, stale/queued/out-of-order fixes, field minimization, body limit, expiry, cleanup, HTTPS.');
+
+// Route upload is admin-only and cannot be used through the phone credential.
+const route={name:'Test route',segments:[[[0,0],[0.1,0.2]],[[1,1],[2,2]]]};
+assert.equal((await send('/route',route)).status,401);
+assert.equal((await send('/route',route,phone)).status,401);
+assert.equal((await send('/route',{...route,segments:[[[91,0],[0,0]]]},admin)).status,400);
+assert.equal((await send('/route',{...route,segments:[Array.from({length:2501},()=>[0,0])]},admin)).status,400);
+assert.equal((await send('/route',route,admin)).status,200);
+const publicRoute=await (await send('/route')).json();
+assert.equal(publicRoute.name,'Test route');assert.equal(publicRoute.segments.length,2);
+assert.equal((await latest()).routeVersion,publicRoute.version);
+await send('/control',{enabled:true},admin);
+await send('/pub',fix,phone);
+assert.equal((await latest()).track.length,1);
+assert.equal((await latest()).track[0].lat,0);
+store.set('state',{until:now+100,since:now-100,point:{...fix,tst:now-30}});
+store.set('track',Array.from({length:720},(_,i)=>({lat:0,lon:0,tst:now-30*(720-i)})));
+await send('/pub',fix,phone);assert.equal((await latest()).track.length,720);
+await send('/control',{enabled:false},admin);
+assert.equal((await latest()).track.length,0);
+assert.equal((await (await send('/route')).json()).name,'Test route');
+store.set('state',{until:now-1,since:now-100,point:fix});store.set('track',[fix]);
+assert.equal((await latest()).track.length,0);assert.equal(store.has('track'),false);
+await obj.alarm();assert.equal(store.has('route'),true);
+// A delayed alarm must not wipe a newly started session.
+await send('/control',{enabled:true},admin);await send('/pub',fix,phone);await obj.alarm();
+assert.equal((await latest()).track.length,1);
+await send('/route',{remove:true},admin);assert.equal(await (await send('/route')).json(),null);
+assert.equal((await latest()).routeVersion,null);
+await send('/control',{enabled:false},admin);
+console.log('Passed: route authorization, coordinate and size limits, segmented routes, public revision, breadcrumbs, bounded history, pause/expiry cleanup, route persistence/removal, delayed alarm safety.');
