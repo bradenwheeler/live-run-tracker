@@ -18,5 +18,16 @@ assert.equal(JSON.stringify((await(await send('/route')).json()).elevations),'[[
 assert.equal(JSON.stringify(values.get('setup:'+id).route.elevations),'[[10,20,null]]');
 await send('/route',{...route,segments:[[[1,1],[1,1.01]]],elevations:[[10,20]]});
 assert.equal(values.has('checkpoints'),false);
+const archivedId=values.get('activeSetup');
+await send('/checkpoints',{name:'Saved aid',mile:.2});
+const current=await(await send('/route')).json();
+await send('/control',{enabled:true});
+assert.equal((await send('/route',{...current,newSetup:true})).status,409);
+await send('/control',{enabled:false});
+await send('/route',{...current,newSetup:true});
+assert.notEqual(values.get('activeSetup'),archivedId,'explicit new route creates separate setup even with matching coordinates');
+assert.equal(values.get('setup:'+archivedId).checkpoints[0].name,'Saved aid','old setup retains its checkpoints');
+assert.equal(values.has('checkpoints'),false);
+assert.equal(JSON.stringify(values.get('runSettings')),'{"hours":48,"raceStart":null}');
 Date.now=realNow;
 console.log('Elevation validation, public storage, saved setup persistence and same-route checkpoint preservation passed');

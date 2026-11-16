@@ -138,6 +138,7 @@ export class Tracker {
       return json({startedAt:state.since,expiresAt:state.until,pointsIncluded:rebuilt.track.length});
     }
     if(path==="/route") {
+      if(data?.newSetup===true&&state.until>now)return json({error:"Stop sharing before publishing a new route. Load your current saved route to stop the run first."},409);
       if(data?.remove===true){await this.ctx.storage.delete("route");await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("checkpointCrossings");await this.ctx.storage.delete("activeSetup");return json({removed:true});}
       if(!data || typeof data.name!=="string" || !data.name.trim() || data.name.length>80 || !Array.isArray(data.segments) || !data.segments.length || data.segments.length>100) return json({error:"Invalid route"},400);
       let count=0;const segments=[];
@@ -153,12 +154,13 @@ export class Tracker {
         elevations=data.elevations.map(s=>s.map(v=>v===null?null:Math.round(v*10)/10));
       }
       const previousRoute=await this.ctx.storage.get('route');
-      const sameGeometry=data.elevations!==undefined&&previousRoute&&JSON.stringify(previousRoute.segments)===JSON.stringify(segments);
+      const sameGeometry=data.newSetup!==true&&data.elevations!==undefined&&previousRoute&&JSON.stringify(previousRoute.segments)===JSON.stringify(segments);
       const setupIndex=await this.ctx.storage.get('setupIndex')||[];
       if(!sameGeometry&&setupIndex.length>=50)return json({error:"Delete an unused saved setup before uploading another GPX."},400);
       const fileName=typeof data.fileName==='string'?data.fileName.split(/[\\/]/).at(-1).slice(0,180):data.name.trim()+'.gpx';
       const route={name:data.name.trim(),fileName,segments,...(elevations?{elevations}:{}),version:crypto.randomUUID(),points:count};
       if(new TextEncoder().encode(JSON.stringify(route)).length>100000)return json({error:"Route is too large"},400);
+      if(data.newSetup===true)await this.ctx.storage.put("runSettings",{hours:48,raceStart:null});
       await this.ctx.storage.put("route",route);if(!sameGeometry){await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("activeSetup");}await this.ctx.storage.delete("checkpointCrossings");await saveSetup(this.ctx.storage,state);return json({name:route.name,points:count,checkpointsPreserved:!!sameGeometry});
     }
     if(path==="/control") {
