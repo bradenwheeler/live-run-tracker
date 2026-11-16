@@ -77,6 +77,16 @@ export class Tracker {
         await this.ctx.storage.put('runSettings',profile.settings);await this.ctx.storage.put('activeSetup',profile.id);
         return json({loaded:true,active:false,settings:profile.settings,name:profile.name});
       }
+      if(action==='duplicate'){
+        if(typeof data.id!=='string')return json({error:"Choose a saved route."},400);
+        const source=await this.ctx.storage.get(setupKey(data.id));if(!source)return json({error:"Saved route not found."},404);
+        const index=await this.ctx.storage.get('setupIndex')||[];if(index.length>=50)return json({error:"Delete an unused saved route before creating another."},400);
+        const base=source.name.slice(0,140);let name=base+' (copy)',number=2;while(index.some(p=>p.name===name)){name=base+' (copy '+number+')';number++;}
+        const id=crypto.randomUUID(),fileName=name+'.gpx',updatedAt=now;
+        const profile={...source,id,name,fileName,updatedAt,route:{...source.route,fileName,name:name.slice(0,80),version:crypto.randomUUID()}};
+        if(new TextEncoder().encode(JSON.stringify(profile)).length>120000)return json({error:"This saved route is too large to duplicate."},400);
+        await this.ctx.storage.put(setupKey(id),profile);const meta={id,name,fileName,updatedAt};await this.ctx.storage.put('setupIndex',[...index,meta]);return json(meta);
+      }
       if(action==='delete'){
         if(state.until>now&&await this.ctx.storage.get('activeSetup')===data?.id)return json({error:"Stop sharing before deleting the route used by your active run."},409);
         if(typeof data.id!=='string')return json({error:"Choose a saved setup."},400);
