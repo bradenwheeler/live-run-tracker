@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {nearestRoutePoint} from '../docs/route-progress.mjs';
 const lon=n=>n*1609.344/6371008.8*180/Math.PI;
 let r=nearestRoutePoint([[[0,0],[0,lon(10)]]],{lat:.001,lon:lon(5)});
-assert.ok(Math.abs(r.alongMiles-5)<.00001);assert.equal(r.lastMarker,4);assert.ok(Math.abs(r.position[0])<1e-8);assert.ok(r.offsetMeters>100);
+assert.ok(Math.abs(r.alongMiles-5)<.00001);assert.equal(r.lastMarker,4);assert.ok(Math.abs(r.totalMeters/1609.344-10)<.00001);assert.ok(Math.abs(r.remainingMeters/1609.344-5)<.00001);assert.ok(Math.abs(r.position[0])<1e-8);assert.ok(r.offsetMeters>100);
 r=nearestRoutePoint([[[0,0],[0,lon(10)]]],{lat:0,lon:lon(2)});assert.equal(r.lastMarker,2);
 r=nearestRoutePoint([[[0,0],[0,lon(10)]]],{lat:0,lon:-1});assert.equal(r.lastMarker,0);
 r=nearestRoutePoint([[[0,0],[0,lon(10)]]],{lat:0,lon:2});assert.equal(r.lastMarker,10);

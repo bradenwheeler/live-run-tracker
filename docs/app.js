@@ -1,4 +1,5 @@
-import {nearestRoutePoint} from './route-progress.mjs?v=1';
+import {finishEstimate} from './finish-estimate.mjs?v=1';
+import {nearestRoutePoint} from './route-progress.mjs?v=2';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers} from './mile-markers.mjs?v=1';
 const $=id=>document.getElementById(id);
@@ -6,11 +7,11 @@ const api=window.TRACKER_API?.replace(/\/$/,'');
 const map=L.map('map').setView([20,0],2);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const mileLayer=L.layerGroup().addTo(map);
-const progressLayer=L.layerGroup().addTo(map);let routeSegments=[];
-function clearProgress(){progressLayer.clearLayers();$('lastMarker').textContent='—';}
+const progressLayer=L.layerGroup().addTo(map);let routeSegments=[],routeMatch=null;
+function clearProgress(){progressLayer.clearLayers();routeMatch=null;for(const id of ['routeDistance','remaining','finishDuration','finishTime'])$(id).textContent='—';}
 function updateProgress(location){
   clearProgress();const match=nearestRoutePoint(routeSegments,location);if(!match)return;
-  $('lastMarker').textContent=match.lastMarker?'Mile '+match.lastMarker:'Before mile 2';
+  routeMatch=match;$('routeDistance').textContent=match.alongMiles.toFixed(2)+' mi';$('remaining').textContent=(match.remainingMeters/1609.344).toFixed(2)+' mi';updateStats();
   L.polyline([[location.lat,location.lon],match.position],{color:'#bb6a20',weight:2,dashArray:'4 5',opacity:.9,interactive:false}).addTo(progressLayer);
   L.circleMarker(match.position,{radius:4,color:'#bb6a20',weight:2,fillColor:'#fff',fillOpacity:1}).bindTooltip('Nearest route point · '+match.alongMiles.toFixed(2)+' mi along route').addTo(progressLayer);
 }
@@ -18,13 +19,16 @@ function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLay
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
 let runStats=null,statsReceivedAt=0;
 function updateStats(){
+  $('finishDuration').textContent='—';$('finishTime').textContent='—';
   if(!runStats){$('elapsed').textContent='—';$('pace').textContent='—';$('distance').textContent='—';return;}
   const now=runStats.serverTime+(performance.now()-statsReceivedAt)/1000;
-  if(now>=runStats.expiresAt){runStats=null;updateStats();return;}
+  if(now>=runStats.expiresAt){runStats=null;clearProgress();updateStats();return;}
   const elapsed=Math.max(0,now-runStats.startedAt);
   $('elapsed').textContent=elapsedLabel(elapsed);
   $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';
   $('pace').textContent=runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,runStats.distanceMeters):'—';
+  const estimate=finishEstimate(runStats,routeMatch,now);
+  if(estimate){$('finishDuration').textContent=elapsedLabel(estimate.secondsRemaining);$('finishTime').textContent=new Date(estimate.finishAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});}
 }
 setInterval(updateStats,1000);
 function clearPoint(){clearProgress();if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);marker=circle=point=null;$('time').textContent='—';}

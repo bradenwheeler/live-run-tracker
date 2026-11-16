@@ -21,5 +21,5 @@ export function nearestRoutePoint(segments,location){
   }
   if(!best)return null;
   const miles=best.alongMeters/1609.344;
-  return {...best,alongMiles:miles,lastMarker:Math.floor((miles+1e-9)/2)*2};
+  return {...best,totalMeters:cumulative,remainingMeters:Math.max(0,cumulative-best.alongMeters),alongMiles:miles,lastMarker:Math.floor((miles+1e-9)/2)*2};
 }
