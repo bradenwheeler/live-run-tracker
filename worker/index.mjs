@@ -1,3 +1,4 @@
+import {measuredDistance} from "./run-metrics.mjs";
 import {admin} from "./admin.mjs";
 const headers = {"Content-Type":"application/json", "Cache-Control":"no-store", "Access-Control-Allow-Origin":"*", "X-Content-Type-Options":"nosniff"};
 const json = (value, status=200) => new Response(JSON.stringify(value), {status, headers});
@@ -34,7 +35,7 @@ export class Tracker {
       const point=state.point && now-state.point.tst<=900 ? state.point : null;
       const route=await this.ctx.storage.get("route");
       const track=state.until>now ? await this.ctx.storage.get("track")||[] : [];
-      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,routeVersion:route?.version||null});
+      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,stats:state.until>now?{startedAt:state.since,expiresAt:state.until,distanceMeters:Number.isFinite(state.distanceMeters)?state.distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
     }
     const text=await req.text();let data;
     try{data=text?JSON.parse(text):null;}catch{return json({error:"Invalid JSON"},400);}
@@ -54,7 +55,7 @@ export class Tracker {
     }
     if(path==="/control") {
       if(!data || typeof data.enabled!=="boolean") return json({error:"enabled must be boolean"},400);
-      state={since:now,until:data.enabled?now+21600:0,point:null};
+      state={since:now,until:data.enabled?now+21600:0,point:null,distanceMeters:0};
       await this.ctx.storage.put("state",state);
       await this.ctx.storage.delete("track");
       if(data.enabled) await this.ctx.storage.setAlarm(Date.now()+21600000);
@@ -66,9 +67,10 @@ export class Tracker {
     if(![data.lat,data.lon,data.tst].every(Number.isFinite)||Math.abs(data.lat)>90||Math.abs(data.lon)>180||!Number.isInteger(data.tst)||data.tst>now+30) return json({error:"Invalid location"},400);
     // Discard queued fixes from before this sharing session, old fixes, and out-of-order fixes.
     if(state.until<=now||data.tst<state.since||data.tst<now-900||data.tst<=(state.point?.tst||0)) return json([]);
+    const track=await this.ctx.storage.get("track")||[];
+    state.distanceMeters=measuredDistance(state,data,track);
     state.point={lat:data.lat,lon:data.lon,tst:data.tst,acc:Number.isFinite(data.acc)&&data.acc>=0?Math.min(data.acc,100000):null};
     await this.ctx.storage.put("state",state);
-    const track=await this.ctx.storage.get("track")||[];
     // Persist at most one breadcrumb per 30 seconds. Maximum six-hour session: 720 points.
     if(!track.length||data.tst-track[track.length-1].tst>=30){
       track.push({lat:state.point.lat,lon:state.point.lon,tst:state.point.tst});
