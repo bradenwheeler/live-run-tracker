@@ -49,10 +49,12 @@ function renderCheckpoints(now){
       const position=pointAtMile(routeSegments,cp.mile);
       if(position){const label=document.createElement('span');label.textContent=cp.name+' · '+cp.mile+' mi';
         const pin=L.marker(position,{title:cp.name+' — Mile '+cp.mile,keyboard:true,zIndexOffset:1500}).bindTooltip(label,{permanent:true,direction:'top',offset:[0,-15],className:'checkpoint-map-label'}).bindPopup(document.createElement('div')).addTo(checkpointLayer);
-        entry={marker:pin,crossed:null};checkpointMarkers.set(cp.id,entry);
+        entry={marker:pin,crossed:null,mile:cp.mile,name:cp.name};checkpointMarkers.set(cp.id,entry);
       }
     }
-    if(entry){const crossed=cp.crossedAt!==null;
+    if(entry){
+      if(entry.mile!==cp.mile||entry.name!==cp.name){const position=pointAtMile(routeSegments,cp.mile);if(position)entry.marker.setLatLng(position);const label=document.createElement('span');label.textContent=cp.name+' · '+cp.mile+' mi';entry.marker.setTooltipContent(label);entry.marker.options.title=cp.name+' — Mile '+cp.mile;const icon=entry.marker.getElement();if(icon){icon.title=entry.marker.options.title;icon.setAttribute('aria-label',entry.marker.options.title);}entry.mile=cp.mile;entry.name=cp.name;}
+      const crossed=cp.crossedAt!==null;
       if(entry.crossed!==crossed){entry.marker.setIcon(L.divIcon({className:'checkpoint-map-marker'+(crossed?' crossed':''),html:'<span aria-hidden="true">◆</span>',iconSize:[28,28],iconAnchor:[14,14]}));entry.crossed=crossed;}
       const popup=document.createElement('div'),heading=document.createElement('strong'),detail=document.createElement('p'),when=document.createElement('p');
       heading.textContent=cp.name;detail.textContent='Mile '+cp.mile;when.textContent=status.textContent+': '+time.textContent;popup.append(heading,detail,when);entry.marker.setPopupContent(popup);

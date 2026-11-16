@@ -1,5 +1,7 @@
+import {checkpointMap} from "./checkpoint-map.mjs";
+import {nearestRoutePoint} from "../docs/route-progress.mjs";
 import {checkpointView,ingestCheckpointFix} from "./checkpoints.mjs";
-import {distanceMeters as routeEdgeMeters} from "../docs/mile-markers.mjs";
+import {distanceMeters as routeEdgeMeters,pointAtMile} from "../docs/mile-markers.mjs";
 import {readFixes,rebuildRun,clearSession} from "./session-history.mjs";
 import {measuredDistance} from "./run-metrics.mjs";
 import {admin} from "./admin.mjs";
@@ -14,9 +16,10 @@ async function equal(a,b) {
 export default {async fetch(req,env) {
   const url=new URL(req.url),path=url.pathname;
   if(url.protocol!=="https:") return json({error:"HTTPS required"},400);
-  if(path==="/admin" && req.method==="GET") return new Response(admin,{headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'"}});
-  if(["/location","/route","/checkpoints"].includes(path) && req.method==="GET") return env.TRACKER.get(env.TRACKER.idFromName("runner")).fetch(req);
-  if(!["/pub","/control","/route","/start-time","/session","/checkpoints"].includes(path)) return json({error:"Not found"},404);
+  if(path==="/checkpoint-map"&&req.method==="GET")return new Response(checkpointMap,{headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"strict-origin-when-cross-origin","Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline' https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src data: https://tile.openstreetmap.org; connect-src "+url.origin+"; frame-ancestors 'self'; form-action 'none'"}});
+  if(path==="/admin" && req.method==="GET") return new Response(admin,{headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; form-action 'none'"}});
+  if(["/location","/route","/checkpoints","/checkpoint-map-data"].includes(path) && req.method==="GET") return env.TRACKER.get(env.TRACKER.idFromName("runner")).fetch(req);
+  if(!["/pub","/control","/route","/start-time","/session","/checkpoints","/checkpoint-position"].includes(path)) return json({error:"Not found"},404);
   if(req.method!=="POST") return json({error:"Method not allowed"},405);
   const expected=path==="/pub" ? (env.OWNTRACKS_PASSWORD ? "Basic "+btoa("runner:"+env.OWNTRACKS_PASSWORD) : "") : (env.ADMIN_TOKEN ? "Bearer "+env.ADMIN_TOKEN : "");
   if(!expected) return json({error:"Receiver secrets not configured"},503);
@@ -39,6 +42,10 @@ export class Tracker {
       state.captureAt=state.since;state.historyVersion=1;state.trackStep=Math.max(30,Math.ceil((state.until-state.captureAt)/1440));
       await this.ctx.storage.put("state",state);
     }
+    if(path==="/checkpoint-map-data"){
+      const route=await this.ctx.storage.get("route"),items=(await this.ctx.storage.get("checkpoints"))?.items||[];
+      return json({route,checkpoints:items.map(cp=>({...cp,position:route?pointAtMile(route.segments,cp.mile):null}))});
+    }
     if(path==="/route" && req.method==="GET") return json(await this.ctx.storage.get("route")||null);
     if(path==="/checkpoints"&&req.method==="GET")return json((await this.ctx.storage.get("checkpoints"))?.items||[]);
     if(path==="/location") {
@@ -54,6 +61,14 @@ export class Tracker {
     }
     const text=await req.text();let data;
     try{data=text?JSON.parse(text):null;}catch{return json({error:"Invalid JSON"},400);}
+    if(path==="/checkpoint-position"){
+      if(!Number.isFinite(data?.lat)||!Number.isFinite(data?.lon)||Math.abs(data.lat)>90||Math.abs(data.lon)>180)return json({error:"Invalid pin location."},400);
+      const route=await this.ctx.storage.get("route");if(!route)return json({error:"Upload a GPX route first."},409);
+      const match=nearestRoutePoint(route.segments,data);if(!match)return json({error:"Unable to match the route."},400);
+      // Round down at the final fraction so a finish pin stays within the route.
+      const mile=Math.floor(match.alongMiles*1000+1e-7)/1000;
+      return json({mile,position:pointAtMile(route.segments,mile),offsetMeters:match.offsetMeters});
+    }
     if(path==="/checkpoints"){
       const route=await this.ctx.storage.get("route");if(!route)return json({error:"Upload a GPX route before adding checkpoints."},409);
       const config=await this.ctx.storage.get("checkpoints")||{items:[]};
@@ -63,8 +78,12 @@ export class Tracker {
         if(typeof data?.name!=='string'||!data.name.trim()||data.name.length>80||!Number.isFinite(data.mile)||data.mile<0)return json({error:"Enter a checkpoint name and a mile number of zero or greater."},400);
         let total=0;for(const seg of route.segments)for(let i=1;i<seg.length;i++)total+=routeEdgeMeters(seg[i-1],seg[i]);
         if(data.mile>total/1609.344+1e-6)return json({error:"Checkpoint mile is beyond the end of the uploaded route."},400);
-        if(config.items.length>=50)return json({error:"This route supports up to 50 checkpoints."},400);
-        config.items.push({id:crypto.randomUUID(),name:data.name.trim(),mile:Math.round(data.mile*1000)/1000});
+        if(data.id!==undefined&&typeof data.id!=='string')return json({error:"Invalid checkpoint ID."},400);
+        const index=data.id?config.items.findIndex(cp=>cp.id===data.id):-1;
+        if(data.id&&index<0)return json({error:"Checkpoint no longer exists. Reload the list."},404);
+        if(index<0&&config.items.length>=50)return json({error:"This route supports up to 50 checkpoints."},400);
+        const checkpoint={id:data.id||crypto.randomUUID(),name:data.name.trim(),mile:Math.round(data.mile*1000)/1000};
+        if(index>=0)config.items[index]=checkpoint;else config.items.push(checkpoint);
         config.items.sort((a,b)=>a.mile-b.mile);
       }
       config.version=crypto.randomUUID();await this.ctx.storage.put("checkpoints",config);return json(config.items);

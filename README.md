@@ -105,3 +105,9 @@ For checkpoints ahead, ETA uses the current route pace: remaining miles to the c
 ## Checkpoints on the map
 
 Named checkpoints are positioned automatically at their mile distance along the uploaded route, including fractional miles. Distances accumulate within GPX segments without drawing or measuring artificial bridges between them. Each checkpoint has a labeled marker, gold while upcoming and green once crossed. Tap/click the marker for its name, mile, and estimated arrival or recorded crossing time. The popup updates alongside the checkpoint list. Checkpoint locations remain visible while sharing is paused, and removed checkpoints disappear on refresh. The original two-mile numbered route markers remain.
+
+## Place and edit checkpoints with map pins
+
+The private controls now include an isolated map picker. Enter your ADMIN_TOKEN, choose **Place pin on map**, and click near the route. The receiver projects the pin onto the GPX and fills the mile field; the green draft pin can also be dragged. Enter a name and click **Add checkpoint** to publish. Selecting a saved pin or clicking its **Edit** button loads its name and mile for editing; drag the pin or change the fields and click **Save checkpoint**. **Cancel edit / clear pin** discards only the unsaved form. Pin placement alone never saves a checkpoint.
+
+The picker runs in a sandboxed iframe without same-origin access and never receives the admin token. It loads only already-public route/checkpoint data. The parent validates messages by iframe identity and opaque origin and sends coordinates to an authenticated projection endpoint. The public tracker remains read-only. Checkpoint edits preserve their IDs, update map labels/positions on refresh, and recalculate crossing records from retained session fixes.
