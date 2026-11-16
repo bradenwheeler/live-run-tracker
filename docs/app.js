@@ -1,3 +1,4 @@
+import {trackerRequest,retryDelay} from './tracker-request.mjs?v=1';
 import {finishEstimate} from './finish-estimate.mjs?v=1';
 import {nearestRoutePoint} from './route-progress.mjs?v=2';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
@@ -17,7 +18,8 @@ function updateProgress(location){
 }
 function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();routeSegments=[];clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
-let runStats=null,statsReceivedAt=0;
+let runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
+function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
 function updateStats(){
   $('finishDuration').textContent='—';$('finishTime').textContent='—';
   if(!runStats){$('elapsed').textContent='—';$('pace').textContent='—';$('distance').textContent='—';return;}
@@ -38,7 +40,7 @@ function drawTrack(points,current){
   if(actual)map.removeLayer(actual);actual=null;track=points;
   const pts=[...points];if(current&&(!pts.length||current.tst>pts[pts.length-1].tst))pts.push(current);
   const segments=[];let segment=[];let previous;
-  for(const p of pts){if(previous&&p.tst-previous.tst>180){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
+  for(const p of pts){if(previous&&p.tst-previous.tst>900){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
   if(segments.length)actual=L.polyline(segments,{color:'#197852',weight:5,opacity:.85}).addTo(map);
 }
 $('center').onclick=()=>{if(point)map.setView([point.lat,point.lon],15);else if(actual)map.fitBounds(actual.getBounds(),{padding:[35,35],maxZoom:16});};
@@ -46,15 +48,16 @@ $('routeFit').onclick=()=>{const bounds=planned?.getBounds();if(bounds?.isValid(
 async function syncRoute(version){
   if(version===null){clearPlanned();routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;return;}
   if(version===routeVersion)return;
-  const r=await fetch(api+'/route',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error('route');const route=await r.json();
+  const route=await trackerRequest(api+'/route');
   clearPlanned();
   if(route){routeSegments=route.segments;planned=L.polyline(route.segments,{color:'#4968c9',weight:4,dashArray:'9 7',opacity:.85}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
   else{routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;}
 }
-async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;
+async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;clearTimeout(retryTimer);
 try{
-  const r=await fetch(api+'/location',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error();const data=await r.json();runStats=data.stats||null;statsReceivedAt=performance.now();updateStats();
-  let routeError=false;try{await syncRoute(data.routeVersion??null);}catch{clearPlanned();routeVersion=undefined;$('routeName').textContent='Route unavailable — retrying';$('routeFit').disabled=true;routeError=true;}
+  const data=await trackerRequest(api+'/location');runStats=data.stats||null;statsReceivedAt=performance.now();updateStats();
+  let routeError=false;try{await syncRoute(data.routeVersion??null);}catch{clearPlanned();routeVersion=undefined;$('routeName').textContent='Route unavailable — retrying';$('routeFit').disabled=true;routeError=true;retrySoon();}
+  if(!routeError)failures=0;
   const p=data.point;
   if(data.status==='paused'){clearPoint();clearTrack();$('badge').textContent='NOT SHARING';$('status').textContent='Paused';if(planned)$('overlay').hidden=true;else message(routeError?'Route unavailable — retrying':'Sharing is paused');return;}
   drawTrack(data.track||[],p);
@@ -63,6 +66,6 @@ try{
   if(marker)marker.setLatLng([p.lat,p.lon]);else marker=L.circleMarker([p.lat,p.lon],{radius:9,color:'#fff',weight:3,fillColor:'#197852',fillOpacity:1}).addTo(map);
   if(circle)map.removeLayer(circle);if(p.acc!==null)circle=L.circle([p.lat,p.lon],{radius:p.acc,color:'#197852',weight:1,fillOpacity:.08}).addTo(map);
   if(!hasFitted){map.setView([p.lat,p.lon],15);hasFitted=true;}
-}catch{runStats=null;updateStats();clearPoint();clearTrack();message('Connection unavailable — retrying automatically');$('status').textContent='Connection unavailable';$('badge').textContent='OFFLINE';}finally{busy=false;}}
+}catch(error){runStats=null;updateStats();clearPoint();clearTrack();const connection=error.kind==='connection';message(connection?'Connection interrupted — retrying shortly':'Unable to display update — retrying shortly');$('status').textContent=connection?'Reconnecting':'Display error';$('badge').textContent='OFFLINE';console.warn('Tracker update failed:',error.kind||'display',error.status||error.name);retrySoon();}finally{busy=false;}}
 refresh();setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);
 setInterval(()=>{if(point&&Date.now()/1000-point.tst>900){clearPoint();$('status').textContent='Location expired';$('badge').textContent='WAITING';}},5000);
