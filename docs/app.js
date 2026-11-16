@@ -5,8 +5,17 @@ import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers} from './mile-markers.mjs?v=1';
 const $=id=>document.getElementById(id);
 const api=window.TRACKER_API?.replace(/\/$/,'');
-const map=L.map('map').setView([20,0],2);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+const map=L.map('map',{minZoom:1,maxZoom:19}).setView([20,0],2);
+let baseLayer;
+function fallbackBasemap(){if(baseLayer)map.removeLayer(baseLayer);baseLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{className:'quiet-tiles',maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);}
+try{
+  baseLayer=L.maplibreGL({style:'https://tiles.openfreemap.org/styles/positron',attributionControl:false}).addTo(map);
+  const gl=baseLayer.getMaplibreMap();
+  gl.on('load',()=>{for(const layer of gl.getStyle().layers){if(layer.type==='symbol'&&/poi|housenumber|shield|transit/i.test(layer.id))gl.setLayoutProperty(layer.id,'visibility','none');}});
+  const credit='&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  map.attributionControl.addAttribution(credit);
+  setTimeout(()=>{if(!gl.isStyleLoaded()){map.attributionControl.removeAttribution(credit);fallbackBasemap();}},15000);
+}catch{fallbackBasemap();}
 const mileLayer=L.layerGroup().addTo(map);
 const progressLayer=L.layerGroup().addTo(map);let routeSegments=[],routeMatch=null;
 function clearProgress(){progressLayer.clearLayers();routeMatch=null;for(const id of ['routeDistance','remaining','finishDuration','finishTime'])$(id).textContent='—';}
@@ -41,7 +50,7 @@ function drawTrack(points,current){
   const pts=[...points];if(current&&(!pts.length||current.tst>pts[pts.length-1].tst))pts.push(current);
   const segments=[];let segment=[];let previous;
   for(const p of pts){if(previous&&p.tst-previous.tst>900){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
-  if(segments.length)actual=L.polyline(segments,{color:'#197852',weight:5,opacity:.85}).addTo(map);
+  if(segments.length)actual=L.polyline(segments,{color:'#197852',weight:4,opacity:.9}).addTo(map);
 }
 $('center').onclick=()=>{if(point)map.setView([point.lat,point.lon],15);else if(actual)map.fitBounds(actual.getBounds(),{padding:[35,35],maxZoom:16});};
 $('routeFit').onclick=()=>{const bounds=planned?.getBounds();if(bounds?.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:16});};
@@ -50,7 +59,7 @@ async function syncRoute(version){
   if(version===routeVersion)return;
   const route=await trackerRequest(api+'/route');
   clearPlanned();
-  if(route){routeSegments=route.segments;planned=L.polyline(route.segments,{color:'#4968c9',weight:4,dashArray:'9 7',opacity:.85}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
+  if(route){routeSegments=route.segments;planned=L.polyline(route.segments,{color:'#4968c9',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
   else{routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;}
 }
 async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;clearTimeout(retryTimer);
