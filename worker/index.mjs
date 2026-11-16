@@ -77,6 +77,7 @@ export class Tracker {
         return json({loaded:true,active:false,settings:profile.settings,name:profile.name});
       }
       if(action==='delete'){
+        if(state.until>now&&await this.ctx.storage.get('activeSetup')===data?.id)return json({error:"Stop sharing before deleting the route used by your active run."},409);
         if(typeof data.id!=='string')return json({error:"Choose a saved setup."},400);
         await this.ctx.storage.delete(setupKey(data.id));
         await this.ctx.storage.put('setupIndex',(await this.ctx.storage.get('setupIndex')||[]).filter(p=>p.id!==data.id));
