@@ -1,3 +1,4 @@
+import {nearestRoutePoint} from './route-progress.mjs?v=1';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers} from './mile-markers.mjs?v=1';
 const $=id=>document.getElementById(id);
@@ -5,7 +6,15 @@ const api=window.TRACKER_API?.replace(/\/$/,'');
 const map=L.map('map').setView([20,0],2);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const mileLayer=L.layerGroup().addTo(map);
-function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();}
+const progressLayer=L.layerGroup().addTo(map);let routeSegments=[];
+function clearProgress(){progressLayer.clearLayers();$('lastMarker').textContent='—';}
+function updateProgress(location){
+  clearProgress();const match=nearestRoutePoint(routeSegments,location);if(!match)return;
+  $('lastMarker').textContent=match.lastMarker?'Mile '+match.lastMarker:'Before mile 2';
+  L.polyline([[location.lat,location.lon],match.position],{color:'#bb6a20',weight:2,dashArray:'4 5',opacity:.9,interactive:false}).addTo(progressLayer);
+  L.circleMarker(match.position,{radius:4,color:'#bb6a20',weight:2,fillColor:'#fff',fillOpacity:1}).bindTooltip('Nearest route point · '+match.alongMiles.toFixed(2)+' mi along route').addTo(progressLayer);
+}
+function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();routeSegments=[];clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
 let runStats=null,statsReceivedAt=0;
 function updateStats(){
@@ -18,7 +27,7 @@ function updateStats(){
   $('pace').textContent=runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,runStats.distanceMeters):'—';
 }
 setInterval(updateStats,1000);
-function clearPoint(){if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);marker=circle=point=null;$('time').textContent='—';}
+function clearPoint(){clearProgress();if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);marker=circle=point=null;$('time').textContent='—';}
 function clearTrack(){track=[];if(actual)map.removeLayer(actual);actual=null;}
 function message(text){$('overlay').hidden=false;$('overlay').textContent=text;}
 function drawTrack(points,current){
@@ -35,7 +44,7 @@ async function syncRoute(version){
   if(version===routeVersion)return;
   const r=await fetch(api+'/route',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error('route');const route=await r.json();
   clearPlanned();
-  if(route){planned=L.polyline(route.segments,{color:'#4968c9',weight:4,dashArray:'9 7',opacity:.85}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
+  if(route){routeSegments=route.segments;planned=L.polyline(route.segments,{color:'#4968c9',weight:4,dashArray:'9 7',opacity:.85}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
   else{routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;}
 }
 async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;
@@ -46,7 +55,7 @@ try{
   if(data.status==='paused'){clearPoint();clearTrack();$('badge').textContent='NOT SHARING';$('status').textContent='Paused';if(planned)$('overlay').hidden=true;else message(routeError?'Route unavailable — retrying':'Sharing is paused');return;}
   drawTrack(data.track||[],p);
   if(!p||Date.now()/1000-p.tst>900){clearPoint();$('badge').textContent='WAITING';$('status').textContent='Waiting for location';if(planned||actual)$('overlay').hidden=true;else message('Waiting for a fresh location');return;}
-  point=p;$('overlay').hidden=true;$('badge').textContent=Date.now()/1000-p.tst>180?'LAST KNOWN':'SHARING';$('status').textContent=Date.now()/1000-p.tst>180?'Last known location':'Receiving updates';$('time').textContent=new Date(p.tst*1000).toLocaleTimeString();
+  point=p;updateProgress(p);$('overlay').hidden=true;$('badge').textContent=Date.now()/1000-p.tst>180?'LAST KNOWN':'SHARING';$('status').textContent=Date.now()/1000-p.tst>180?'Last known location':'Receiving updates';$('time').textContent=new Date(p.tst*1000).toLocaleTimeString();
   if(marker)marker.setLatLng([p.lat,p.lon]);else marker=L.circleMarker([p.lat,p.lon],{radius:9,color:'#fff',weight:3,fillColor:'#197852',fillOpacity:1}).addTo(map);
   if(circle)map.removeLayer(circle);if(p.acc!==null)circle=L.circle([p.lat,p.lon],{radius:p.acc,color:'#197852',weight:1,fillOpacity:.08}).addTo(map);
   if(!hasFitted){map.setView([p.lat,p.lon],15);hasFitted=true;}
