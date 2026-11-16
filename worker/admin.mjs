@@ -22,7 +22,8 @@ async function loadCheckpoints(){const r=await fetch('/checkpoints',{cache:'no-s
 el('placeCheckpoint').onclick=()=>{if(!el('token').value){el('checkpointResult').textContent='Enter your ADMIN_TOKEN first so the pin can be snapped to the route.';return;}mapMessage({type:'checkpoint-mode',enabled:true});el('checkpointResult').textContent='Click near the route or drag the green pin. Then enter a name and save.';};
 el('cancelCheckpoint').onclick=()=>{cancelCheckpoint();el('checkpointResult').textContent='Editing cancelled. No saved checkpoint was changed.';};
 window.addEventListener('message',async event=>{
-  if(event.source!==el('checkpointMap').contentWindow||event.origin!=='null')return;const d=event.data;if(!d||typeof d.type!=='string')return;
+  if(event.source!==el('checkpointMap').contentWindow||(event.origin!=='null'&&event.origin!==location.origin))return;const d=event.data;if(!d||typeof d.type!=='string')return;
+  if(d.type==='checkpoint-map-ready'){try{const r=await fetch('/checkpoint-map-data',{cache:'no-store'});if(!r.ok)throw Error('Map data unavailable.');mapMessage({type:'checkpoint-map-data',data:await r.json()});}catch(error){el('checkpointResult').textContent=error.message;}}
   if(d.type==='checkpoint-selected'){const cp=checkpointItems.find(cp=>cp.id===d.id);if(cp)editCheckpoint(cp);}
   if(d.type==='checkpoint-picked'){
     if(!Number.isFinite(d.lat)||!Number.isFinite(d.lon))return;
