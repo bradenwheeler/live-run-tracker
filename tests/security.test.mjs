@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import worker,{Tracker} from '../worker/index.mjs';
+// Keep session-boundary tests deterministic even if the runner crosses a second.
+const realNow=Date.now, fixedNow=realNow();Date.now=()=>fixedNow;
 const store=new Map();let alarm;
 const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>store.get(k),put:async(k,v)=>store.set(k,structuredClone(v)),deleteAll:async()=>store.clear(),delete:async k=>store.delete(k),setAlarm:async v=>{alarm=v;},deleteAlarm:async()=>{alarm=null;}}};
 const obj=new Tracker(ctx);
@@ -67,3 +69,5 @@ await send('/route',{remove:true},admin);assert.equal(await (await send('/route'
 assert.equal((await latest()).routeVersion,null);
 await send('/control',{enabled:false},admin);
 console.log('Passed: route authorization, coordinate and size limits, segmented routes, public revision, breadcrumbs, bounded history, pause/expiry cleanup, route persistence/removal, delayed alarm safety.');
+
+Date.now=realNow;
