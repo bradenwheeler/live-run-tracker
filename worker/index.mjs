@@ -1,3 +1,5 @@
+import {checkpointView,ingestCheckpointFix} from "./checkpoints.mjs";
+import {distanceMeters as routeEdgeMeters} from "../docs/mile-markers.mjs";
 import {readFixes,rebuildRun,clearSession} from "./session-history.mjs";
 import {measuredDistance} from "./run-metrics.mjs";
 import {admin} from "./admin.mjs";
@@ -13,8 +15,8 @@ export default {async fetch(req,env) {
   const url=new URL(req.url),path=url.pathname;
   if(url.protocol!=="https:") return json({error:"HTTPS required"},400);
   if(path==="/admin" && req.method==="GET") return new Response(admin,{headers:{"Content-Type":"text/html;charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer","Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'none'"}});
-  if(["/location","/route"].includes(path) && req.method==="GET") return env.TRACKER.get(env.TRACKER.idFromName("runner")).fetch(req);
-  if(!["/pub","/control","/route","/start-time","/session"].includes(path)) return json({error:"Not found"},404);
+  if(["/location","/route","/checkpoints"].includes(path) && req.method==="GET") return env.TRACKER.get(env.TRACKER.idFromName("runner")).fetch(req);
+  if(!["/pub","/control","/route","/start-time","/session","/checkpoints"].includes(path)) return json({error:"Not found"},404);
   if(req.method!=="POST") return json({error:"Method not allowed"},405);
   const expected=path==="/pub" ? (env.OWNTRACKS_PASSWORD ? "Basic "+btoa("runner:"+env.OWNTRACKS_PASSWORD) : "") : (env.ADMIN_TOKEN ? "Bearer "+env.ADMIN_TOKEN : "");
   if(!expected) return json({error:"Receiver secrets not configured"},503);
@@ -38,6 +40,7 @@ export class Tracker {
       await this.ctx.storage.put("state",state);
     }
     if(path==="/route" && req.method==="GET") return json(await this.ctx.storage.get("route")||null);
+    if(path==="/checkpoints"&&req.method==="GET")return json((await this.ctx.storage.get("checkpoints"))?.items||[]);
     if(path==="/location") {
       if(state.historyDirty){
         const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),state.since,state.trackStep||30);
@@ -47,10 +50,25 @@ export class Tracker {
       const point=state.point && now-state.point.tst<=900 ? state.point : null;
       const route=await this.ctx.storage.get("route");
       const track=state.until>now ? await this.ctx.storage.get("track")||[] : [];
-      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,stats:state.until>now?{startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
+      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,checkpoints:await checkpointView(this.ctx.storage,state,route,await this.ctx.storage.get("checkpoints"),now),stats:state.until>now?{startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
     }
     const text=await req.text();let data;
     try{data=text?JSON.parse(text):null;}catch{return json({error:"Invalid JSON"},400);}
+    if(path==="/checkpoints"){
+      const route=await this.ctx.storage.get("route");if(!route)return json({error:"Upload a GPX route before adding checkpoints."},409);
+      const config=await this.ctx.storage.get("checkpoints")||{items:[]};
+      if(typeof data?.removeId==='string'){
+        config.items=config.items.filter(cp=>cp.id!==data.removeId);
+      }else{
+        if(typeof data?.name!=='string'||!data.name.trim()||data.name.length>80||!Number.isFinite(data.mile)||data.mile<0)return json({error:"Enter a checkpoint name and a mile number of zero or greater."},400);
+        let total=0;for(const seg of route.segments)for(let i=1;i<seg.length;i++)total+=routeEdgeMeters(seg[i-1],seg[i]);
+        if(data.mile>total/1609.344+1e-6)return json({error:"Checkpoint mile is beyond the end of the uploaded route."},400);
+        if(config.items.length>=50)return json({error:"This route supports up to 50 checkpoints."},400);
+        config.items.push({id:crypto.randomUUID(),name:data.name.trim(),mile:Math.round(data.mile*1000)/1000});
+        config.items.sort((a,b)=>a.mile-b.mile);
+      }
+      config.version=crypto.randomUUID();await this.ctx.storage.put("checkpoints",config);return json(config.items);
+    }
     if(path==="/session"&&data?.hours!==undefined){
       if(state.until<=now)return json({error:"Start a recording session first."},409);
       if(!Number.isInteger(data.hours)||data.hours<1||data.hours>72)return json({error:"Choose 1–72 hours."},400);
@@ -72,7 +90,7 @@ export class Tracker {
       return json({startedAt:state.since,expiresAt:state.until,pointsIncluded:rebuilt.track.length});
     }
     if(path==="/route") {
-      if(data?.remove===true){await this.ctx.storage.delete("route");return json({removed:true});}
+      if(data?.remove===true){await this.ctx.storage.delete("route");await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("checkpointCrossings");return json({removed:true});}
       if(!data || typeof data.name!=="string" || !data.name.trim() || data.name.length>80 || !Array.isArray(data.segments) || !data.segments.length || data.segments.length>100) return json({error:"Invalid route"},400);
       let count=0;const segments=[];
       for(const seg of data.segments){
@@ -83,7 +101,7 @@ export class Tracker {
       }
       const route={name:data.name.trim(),segments,version:crypto.randomUUID(),points:count};
       if(new TextEncoder().encode(JSON.stringify(route)).length>100000)return json({error:"Route is too large"},400);
-      await this.ctx.storage.put("route",route);return json({name:route.name,points:count});
+      await this.ctx.storage.put("route",route);await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("checkpointCrossings");return json({name:route.name,points:count});
     }
     if(path==="/control") {
       if(!data || typeof data.enabled!=="boolean") return json({error:"enabled must be boolean"},400);
@@ -107,6 +125,7 @@ export class Tracker {
     if(bucket.some(p=>p.tst===fix.tst))return json([]);
     bucket.push(fix);await this.ctx.storage.put(key,bucket);
     if(fix.tst<state.since)return json([]);
+    await ingestCheckpointFix(this.ctx.storage,state,fix);
     let track=await this.ctx.storage.get("track")||[];
     if(state.point&&fix.tst<=state.point.tst){
       // Batch late/offline arrivals: rebuild once on the next public refresh.

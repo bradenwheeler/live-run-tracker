@@ -17,6 +17,6 @@ export function rebuildRun(fixes,start,step){
   return {point:eligible.at(-1)||null,distanceMeters,distanceVersion:2,track:track.slice(-1440)};
 }
 export async function clearSession(storage){
-  const keys=['state','track','legacyFixes',...(await rawEntries(storage)).keys()];
+  const keys=['state','track','legacyFixes','checkpointCrossings',...(await rawEntries(storage)).keys()];
   for(let i=0;i<keys.length;i+=128)await storage.delete(keys.slice(i,i+128));
 }

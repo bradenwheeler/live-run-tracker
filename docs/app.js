@@ -1,6 +1,6 @@
 import {trackerRequest,retryDelay} from './tracker-request.mjs?v=1';
 import {finishEstimate} from './finish-estimate.mjs?v=2';
-import {nearestRoutePoint} from './route-progress.mjs?v=2';
+import {nearestRoutePoint} from './route-progress.mjs?v=3';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers} from './mile-markers.mjs?v=1';
 const $=id=>document.getElementById(id);
@@ -27,13 +27,30 @@ function updateProgress(location){
 }
 function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();routeSegments=[];clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
-let runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
+let checkpoints=[],runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
 function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
+function renderCheckpoints(now){
+  const list=$('checkpointRows');list.replaceChildren();
+  if(!checkpoints.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No checkpoints added.';list.append(empty);return;}
+  for(const cp of checkpoints){
+    const row=document.createElement('div'),info=document.createElement('div'),name=document.createElement('strong'),mile=document.createElement('span'),arrival=document.createElement('div'),status=document.createElement('small'),time=document.createElement('span');
+    row.className='checkpoint-row';name.textContent=cp.name;mile.textContent='Mile '+cp.mile;mile.className='checkpoint-mile';arrival.className='checkpoint-arrival';
+    let at=null;
+    if(cp.crossedAt!==null){status.textContent='CROSSED';at=cp.crossedAt;row.classList.add('crossed');}
+    else{
+      const estimate=routeMatch?finishEstimate(runStats,{...routeMatch,remainingMeters:Math.max(0,cp.mile*1609.344-routeMatch.alongMeters)},now):null;
+      status.textContent=estimate?'EST. ARRIVAL':'AWAITING UPDATES';at=estimate?.finishAt??null;
+    }
+    time.textContent=at===null?'—':new Date(at*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:cp.crossedAt!==null?'2-digit':undefined,timeZoneName:'short'});
+    info.append(name,mile);arrival.append(status,time);row.append(info,arrival);list.append(row);
+  }
+}
 function updateStats(){
   $('finishDuration').textContent='—';$('finishTime').textContent='—';
-  if(!runStats){$('elapsed').textContent='—';$('pace').textContent='—';$('routePace').textContent='—';$('distance').textContent='—';$('savedStart').textContent='';$('distanceCoverage').textContent='';return;}
+  if(!runStats){$('elapsed').textContent='—';$('pace').textContent='—';$('routePace').textContent='—';$('distance').textContent='—';$('savedStart').textContent='';$('distanceCoverage').textContent='';renderCheckpoints(NaN);return;}
   const now=runStats.serverTime+(performance.now()-statsReceivedAt)/1000;
   if(now>=runStats.expiresAt){runStats=null;clearProgress();updateStats();return;}
+  renderCheckpoints(now);
   const elapsed=Math.max(0,now-runStats.startedAt);
   $('elapsed').textContent=elapsedLabel(elapsed);$('savedStart').textContent='Start '+new Date(runStats.startedAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
   $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';$('distanceCoverage').textContent=runStats.distanceComplete===false?'Recording began after the race start. Earlier GPS distance is missing; average pace uses incomplete GPS coverage. Finish estimates use route progress.':'';
@@ -66,7 +83,7 @@ async function syncRoute(version){
 }
 async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;clearTimeout(retryTimer);
 try{
-  const data=await trackerRequest(api+'/location');runStats=data.stats||null;statsReceivedAt=performance.now();updateStats();
+  const data=await trackerRequest(api+'/location');checkpoints=data.checkpoints||[];runStats=data.stats||null;statsReceivedAt=performance.now();updateStats();
   let routeError=false;try{await syncRoute(data.routeVersion??null);}catch{clearPlanned();routeVersion=undefined;$('routeName').textContent='Route unavailable — retrying';$('routeFit').disabled=true;routeError=true;retrySoon();}
   if(!routeError)failures=0;
   const p=data.point;
