@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {hasElevations,terrainElevations} from '../worker/terrain-elevation.mjs';
+assert.equal(hasElevations([[null,null]]),false);assert.equal(hasElevations([[0,null]]),true);
+let requests=0;
+const mock=async(url,options)=>{requests++;assert.equal(new URL(url).origin,'https://api.open-meteo.com');assert.equal(options.headers,undefined);const lat=new URL(url).searchParams.get('latitude').split(',').map(Number);assert.ok(lat.length<=100);return {ok:true,json:async()=>({elevation:lat.map(n=>n*100)})};};
+const segments=[Array.from({length:2200},(_,i)=>[i*.0001,0]),...Array.from({length:100},()=>[[1,1],[1.001,1]])];
+const elevation=await terrainElevations(segments,mock);assert.ok(requests<=5);assert.equal(elevation.length,segments.length);assert.equal(elevation[0].length,2200);assert.equal(elevation[0][0],0);assert.equal(elevation[0].at(-1),22);assert.equal(elevation[1][0],100);assert.equal(elevation[1][1],100.1);
+await assert.rejects(()=>terrainElevations([[[0,0],[1,0]]],async()=>({ok:true,json:async()=>({elevation:[null,20]})})),/incomplete/);
+await assert.rejects(()=>terrainElevations([[[0,0],[1,0]]],async()=>({ok:false})),/unavailable/);
+console.log('Terrain batching, interpolation, zero elevation, segment gaps, missing data and failure handling passed');

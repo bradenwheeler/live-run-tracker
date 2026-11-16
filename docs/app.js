@@ -4,7 +4,7 @@ import {nearestRoutePoint} from './route-progress.mjs?v=3';
 import {elapsedLabel,paceLabel} from './run-stats.mjs?v=1';
 import {mileMarkers,pointAtMile} from './mile-markers.mjs?v=2';
 import {completedRoute} from './course-progress.mjs?v=1';
-import {renderElevation} from './elevation-profile.mjs?v=1';
+import {renderElevation} from './elevation-profile.mjs?v=2';
 const $=id=>document.getElementById(id);
 const api=window.TRACKER_API?.replace(/\/$/,'');
 const map=L.map('map',{minZoom:1,maxZoom:19}).setView([20,0],2);

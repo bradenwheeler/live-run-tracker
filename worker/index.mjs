@@ -1,3 +1,4 @@
+import {hasElevations,terrainElevations} from './terrain-elevation.mjs';
 import {inPause,crossesPause} from './session-pauses.mjs';
 import {appliedSettings,saveSetup,setupKey} from "./saved-setups.mjs";
 import {checkpointMap} from "./checkpoint-map.mjs";
@@ -177,10 +178,16 @@ export class Tracker {
       const setupIndex=await this.ctx.storage.get('setupIndex')||[];
       if(!sameGeometry&&setupIndex.length>=50)return json({error:"Delete an unused saved setup before uploading another GPX."},400);
       const fileName=typeof data.fileName==='string'?data.fileName.split(/[\\/]/).at(-1).slice(0,180):data.name.trim()+'.gpx';
-      const route={name:data.name.trim(),fileName,segments,...(elevations?{elevations}:{}),version:crypto.randomUUID(),points:count};
+      let elevationSource=hasElevations(elevations)?'gpx':null,elevationWarning=null;
+      if(data.terrainFallback===true&&!hasElevations(elevations)){
+        if(previousRoute&&JSON.stringify(previousRoute.segments)===JSON.stringify(segments)&&hasElevations(previousRoute.elevations)){
+          elevations=previousRoute.elevations;elevationSource=previousRoute.elevationSource||'gpx';
+        }else try{elevations=await terrainElevations(segments);elevationSource='open-meteo';}catch{elevationWarning='Route saved, but terrain elevation lookup was unavailable. No elevation profile was generated.';}
+      }
+      const route={name:data.name.trim(),fileName,segments,...(elevations?{elevations}:{}),...(elevationSource?{elevationSource}:{}),version:crypto.randomUUID(),points:count};
       if(new TextEncoder().encode(JSON.stringify(route)).length>100000)return json({error:"Route is too large"},400);
       if(data.newSetup===true)await this.ctx.storage.put("runSettings",{hours:48,raceStart:null});
-      await this.ctx.storage.put("route",route);if(!sameGeometry){await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("activeSetup");}await this.ctx.storage.delete("checkpointCrossings");await saveSetup(this.ctx.storage,state);return json({name:route.name,points:count,checkpointsPreserved:!!sameGeometry});
+      await this.ctx.storage.put("route",route);if(!sameGeometry){await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("activeSetup");}await this.ctx.storage.delete("checkpointCrossings");await saveSetup(this.ctx.storage,state);return json({name:route.name,points:count,checkpointsPreserved:!!sameGeometry,elevationSource,elevationWarning});
     }
     if(path==="/control") {
       if(!data || typeof data.enabled!=="boolean") return json({error:"enabled must be boolean"},400);
