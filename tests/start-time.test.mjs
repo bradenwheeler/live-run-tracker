@@ -25,7 +25,7 @@ assert.equal(after.stats.expiresAt,start+48*3600);
 // Earlier private fixes survive an edit and can be restored by correcting again.
 await send('/start-time',{startedAt:start});assert.equal((await view()).track.length,3);
 await send('/start-time',{startedAt:start+1800});after=await view();assert.equal(after.point,null);assert.equal(after.track.length,0);assert.equal(after.stats.distanceMeters,0);
-assert.equal((await send('/start-time',{startedAt:start-1})).status,400);
+assert.equal((await send('/start-time',{startedAt:start-3600})).status,200);assert.equal((await view()).stats.startedAt,start-3600);assert.equal((await view()).stats.distanceComplete,false);assert.equal((await view()).stats.recordingSince,start);assert.equal((await view()).stats.expiresAt,start+48*3600);await send('/start-time',{startedAt:start});assert.equal((await view()).stats.distanceComplete,true);
 assert.equal((await send('/start-time',{startedAt:seconds+1})).status,400);
 seconds=start+7*3600;assert.notEqual((await view()).status,'paused');
 await object.alarm();assert.ok(alarm>seconds*1000);

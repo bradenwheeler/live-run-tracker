@@ -31,12 +31,12 @@ let runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
 function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
 function updateStats(){
   $('finishDuration').textContent='—';$('finishTime').textContent='—';
-  if(!runStats){$('elapsed').textContent='—';$('pace').textContent='—';$('distance').textContent='—';return;}
+  if(!runStats){$('elapsed').textContent='—';$('pace').textContent='—';$('distance').textContent='—';$('savedStart').textContent='';$('distanceCoverage').textContent='';return;}
   const now=runStats.serverTime+(performance.now()-statsReceivedAt)/1000;
   if(now>=runStats.expiresAt){runStats=null;clearProgress();updateStats();return;}
   const elapsed=Math.max(0,now-runStats.startedAt);
-  $('elapsed').textContent=elapsedLabel(elapsed);
-  $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';
+  $('elapsed').textContent=elapsedLabel(elapsed);$('savedStart').textContent='Start '+new Date(runStats.startedAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
+  $('distance').textContent=(runStats.distanceMeters/1609.344).toFixed(2)+' mi';$('distanceCoverage').textContent=runStats.distanceComplete===false?'Recording began after the race start. Earlier distance is missing; pace and finish estimates use incomplete GPS coverage.':'';
   $('pace').textContent=runStats.lastFixAt&&now-runStats.lastFixAt<=180?paceLabel(elapsed,runStats.distanceMeters):'—';
   const estimate=finishEstimate(runStats,routeMatch,now);
   if(estimate){$('finishDuration').textContent=elapsedLabel(estimate.secondsRemaining);$('finishTime').textContent=new Date(estimate.finishAt*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});}
@@ -52,6 +52,7 @@ function drawTrack(points,current){
   for(const p of pts){if(previous&&p.tst-previous.tst>900){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
   if(segments.length)actual=L.polyline(segments,{color:'#197852',weight:4,opacity:.9}).addTo(map);
 }
+$('refreshNow').onclick=()=>refresh();
 $('center').onclick=()=>{if(point)map.setView([point.lat,point.lon],15);else if(actual)map.fitBounds(actual.getBounds(),{padding:[35,35],maxZoom:16});};
 $('routeFit').onclick=()=>{const bounds=planned?.getBounds();if(bounds?.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:16});};
 async function syncRoute(version){

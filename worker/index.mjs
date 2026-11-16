@@ -47,7 +47,7 @@ export class Tracker {
       const point=state.point && now-state.point.tst<=900 ? state.point : null;
       const route=await this.ctx.storage.get("route");
       const track=state.until>now ? await this.ctx.storage.get("track")||[] : [];
-      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,stats:state.until>now?{startedAt:state.since,expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
+      return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,stats:state.until>now?{startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
     }
     const text=await req.text();let data;
     try{data=text?JSON.parse(text):null;}catch{return json({error:"Invalid JSON"},400);}
@@ -65,7 +65,7 @@ export class Tracker {
     if(path==="/session")return json({active:state.until>now,startedAt:state.until>now?state.since:null,recordingSince:state.until>now?state.captureAt:null,expiresAt:state.until>now?state.until:null,serverTime:now});
     if(path==="/start-time"){
       if(state.until<=now)return json({error:"Start recording before editing the race start."},409);
-      if(!Number.isInteger(data?.startedAt)||data.startedAt<(state.captureAt||state.since)||data.startedAt>now)return json({error:"Choose a time between recording activation and now."},400);
+      if(!Number.isInteger(data?.startedAt)||data.startedAt<0||data.startedAt>now)return json({error:"Choose a valid start date and time in the past."},400);
       const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),data.startedAt,state.trackStep||30);
       state={...state,since:data.startedAt,point:rebuilt.point,distanceMeters:rebuilt.distanceMeters,distanceVersion:2,historyDirty:false};
       await this.ctx.storage.put("state",state);await this.ctx.storage.put("track",rebuilt.track);
