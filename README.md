@@ -90,4 +90,8 @@ Private minute buckets have at most 60 distinct timestamped fixes each, spanning
 
 ## Minimal basemap
 
-The map uses OpenFreeMap’s light Positron style, with POIs, house numbers, transit labels and shields suppressed. Route overlays and mile labels remain visible. MapLibre/Leaflet renders the vector basemap; a desaturated OSM raster layer is the fallback if it cannot load. Map credits remain visible. OpenFreeMap states its public instance requires no API key or registration and has no map-view/request limits: https://openfreemap.org/ . This adds no paid map service.
+The map uses OpenFreeMap’s Dark style, with POIs, house numbers, transit labels and shields suppressed. Route overlays and mile labels remain visible. MapLibre/Leaflet renders the vector basemap; a desaturated OSM raster layer is the fallback if it cannot load. Map credits remain visible. OpenFreeMap states its public instance requires no API key or registration and has no map-view/request limits: https://openfreemap.org/ . This adds no paid map service.
+
+## Route and GPS sections / dark mode
+
+Status and last report stay at the top. Route data contains elapsed time, projected route distance, route average pace (elapsed ÷ projected route miles), remaining route distance, estimated remaining duration and finish clock time. GPS data contains recorded GPS distance and GPS average pace (elapsed ÷ GPS miles). Both paces use min/mile and require 0.1 mile plus a recent fix; they remain separate estimates. The public page, control inputs, map, mile labels and map controls use a dark palette. Calculation details are available in a collapsed “About these estimates” panel.
