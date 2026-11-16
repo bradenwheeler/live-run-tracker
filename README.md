@@ -114,7 +114,7 @@ The picker runs in a sandboxed iframe without same-origin access and never recei
 
 ## Saved setups / GPX-named dropdown
 
-The private controls have a **Saved setup** dropdown at the top. Enter ADMIN_TOKEN and choose **Load saved setups** (entering the token also loads the list). Your existing current route is saved the first time the new library is opened. New uploads create a setup named from the GPX filename without `.gpx`; legacy uploads fall back to the GPX route title. Each separate upload creates a distinct entry; duplicate names show their saved date/time.
+The private controls have a **Saved setup** dropdown at the top. Enter ADMIN_TOKEN and choose **Load saved setups** (entering the token also loads the list). Your existing current route is saved automatically on the first location refresh or library load after the upgrade. New uploads create a setup named from the GPX filename without `.gpx`; legacy uploads fall back to the GPX route title. Each separate upload creates a distinct entry; duplicate names show their saved date/time.
 
 Applied changes automatically update the active setup: sanitized GPX geometry, named checkpoint definitions/pins, recording-window hours, and the applied race-start timestamp. **Save applied settings** explicitly saves the same server-applied state; unsaved form edits are not captured. Selecting a setup restores its route and checkpoint definitions, fills the recording window and start-time field, and refreshes the picker. Loading a different setup requires sharing to be stopped; loading the current setup while running leaves the live run unchanged. Loading while paused stays paused and does not restore old live GPS history or checkpoint crossing events.
 

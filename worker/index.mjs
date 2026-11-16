@@ -57,6 +57,7 @@ export class Tracker {
       }
       const point=state.point && now-state.point.tst<=900 ? state.point : null;
       const route=await this.ctx.storage.get("route");
+      if(route&&!(await this.ctx.storage.get("setupIndex")))await saveSetup(this.ctx.storage,state);
       const track=state.until>now ? await this.ctx.storage.get("track")||[] : [];
       return json({status:state.until<=now?"paused":point?"live":"waiting",point:state.until>now?point:null,track,checkpoints:await checkpointView(this.ctx.storage,state,route,await this.ctx.storage.get("checkpoints"),now),stats:state.until>now?{startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
     }
