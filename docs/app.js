@@ -8,6 +8,8 @@ import {renderElevation} from './elevation-profile.mjs?v=2';
 const $=id=>document.getElementById(id);
 const api=window.TRACKER_API?.replace(/\/$/,'');
 const map=L.map('map',{minZoom:1,maxZoom:19}).setView([20,0],2);
+// Keep recorded GPS below course overlays, even when the trail refreshes.
+map.createPane('liveGpsPane');map.getPane('liveGpsPane').style.zIndex='390';map.getPane('liveGpsPane').style.pointerEvents='none';
 let baseLayer;
 function fallbackBasemap(){if(baseLayer)map.removeLayer(baseLayer);baseLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{className:'quiet-tiles',maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);}
 try{
@@ -96,7 +98,7 @@ function drawTrack(points,current){
   const pts=[...points];if(current&&(!pts.length||current.tst>pts[pts.length-1].tst))pts.push(current);
   const segments=[];let segment=[];let previous;
   for(const p of pts){if(previous&&(p.breakBefore||p.tst-previous.tst>900)){if(segment.length)segments.push(segment);segment=[];}segment.push([p.lat,p.lon]);previous=p;}if(segment.length)segments.push(segment);
-  if(segments.length)actual=L.polyline(segments,{color:'#6ed2a4',weight:4,opacity:.9}).addTo(map);
+  if(segments.length)actual=L.polyline(segments,{pane:'liveGpsPane',color:'#276447',weight:7,opacity:.95,interactive:false}).addTo(map);
 }
 $('refreshNow').onclick=()=>refresh();
 $('center').onclick=()=>{if(point)map.setView([point.lat,point.lon],15);else if(actual)map.fitBounds(actual.getBounds(),{padding:[35,35],maxZoom:16});};
