@@ -78,13 +78,11 @@ export class Tracker {
       if(action==='load'){
         if(typeof data.id!=='string')return json({error:"Choose a saved setup."},400);
         const profile=await this.ctx.storage.get(setupKey(data.id));if(!profile)return json({error:"Saved setup not found."},404);
-        const active=await this.ctx.storage.get('activeSetup');
-        if(state.until>now){if(active!==profile.id)return json({error:"Stop sharing before switching to a different saved setup. Your current run has not been changed."},409);return json({loaded:true,active:true,settings:await appliedSettings(this.ctx.storage,state),name:profile.name});}
-        await clearSession(this.ctx.storage);
+        // Routes are overlays on the session: opening one never resets its GPS data or timing.
         await this.ctx.storage.put('route',{...profile.route,version:crypto.randomUUID()});
         await this.ctx.storage.put('checkpoints',{items:profile.checkpoints,version:crypto.randomUUID()});
-        await this.ctx.storage.put('runSettings',profile.settings);await this.ctx.storage.put('activeSetup',profile.id);
-        return json({loaded:true,active:false,settings:profile.settings,name:profile.name});
+        await this.ctx.storage.delete('checkpointCrossings');await this.ctx.storage.put('activeSetup',profile.id);
+        return json({loaded:true,active:state.until>now,paused:state.pausedAt!=null,settings:await appliedSettings(this.ctx.storage,state),name:profile.name});
       }
       if(action==='duplicate'){
         if(typeof data.id!=='string')return json({error:"Choose a saved route."},400);
@@ -97,7 +95,6 @@ export class Tracker {
         await this.ctx.storage.put(setupKey(id),profile);const meta={id,name,fileName,updatedAt};await this.ctx.storage.put('setupIndex',[...index,meta]);return json(meta);
       }
       if(action==='delete'){
-        if(state.until>now&&await this.ctx.storage.get('activeSetup')===data?.id)return json({error:"Stop sharing before deleting the route used by your active run."},409);
         if(typeof data.id!=='string')return json({error:"Choose a saved setup."},400);
         await this.ctx.storage.delete(setupKey(data.id));
         await this.ctx.storage.put('setupIndex',(await this.ctx.storage.get('setupIndex')||[]).filter(p=>p.id!==data.id));
@@ -153,7 +150,7 @@ export class Tracker {
       const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),state.since,state.trackStep);
       state.point=rebuilt.point;state.distanceMeters=rebuilt.distanceMeters;state.distanceVersion=2;state.historyDirty=false;
       await writeTrack(this.ctx.storage,rebuilt.track);
-      await this.ctx.storage.put("state",state);await this.ctx.storage.setAlarm(until*1000);await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));await saveSetup(this.ctx.storage,state);
+      await this.ctx.storage.put("state",state);await this.ctx.storage.setAlarm(until*1000);await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));
     }
     if(path==="/session")return json({active:state.until>now,paused:state.until>now&&state.pausedAt!=null,startedAt:state.until>now?state.since:null,recordingSince:state.until>now?state.captureAt:null,expiresAt:state.until>now?state.until:null,serverTime:now});
     if(path==="/start-time"){
@@ -162,11 +159,10 @@ export class Tracker {
       const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),data.startedAt,state.trackStep||TRACK_STEP);
       state={...state,since:data.startedAt,point:rebuilt.point,distanceMeters:rebuilt.distanceMeters,distanceVersion:2,historyDirty:false};
       await this.ctx.storage.put("state",state);await writeTrack(this.ctx.storage,rebuilt.track);
-      await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));await saveSetup(this.ctx.storage,state);
+      await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));
       return json({startedAt:state.since,expiresAt:state.until,pointsIncluded:rebuilt.track.length});
     }
     if(path==="/route") {
-      if(data?.newSetup===true&&state.until>now)return json({error:"Stop sharing before publishing a new route. Load your current saved route to stop the run first."},409);
       if(data?.remove===true){await this.ctx.storage.delete("route");await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("checkpointCrossings");await this.ctx.storage.delete("activeSetup");return json({removed:true});}
       if(!data || typeof data.name!=="string" || !data.name.trim() || data.name.length>80 || !Array.isArray(data.segments) || !data.segments.length || data.segments.length>100) return json({error:"Invalid route"},400);
       let count=0;const segments=[];
@@ -194,7 +190,6 @@ export class Tracker {
       }
       const route={name:data.name.trim(),fileName,segments,...(elevations?{elevations}:{}),...(elevationSource?{elevationSource}:{}),version:crypto.randomUUID(),points:count};
       if(new TextEncoder().encode(JSON.stringify(route)).length>100000)return json({error:"Route is too large"},400);
-      if(data.newSetup===true)await this.ctx.storage.put("runSettings",{hours:48,raceStart:null});
       await this.ctx.storage.put("route",route);if(!sameGeometry){await this.ctx.storage.delete("checkpoints");await this.ctx.storage.delete("activeSetup");}await this.ctx.storage.delete("checkpointCrossings");await saveSetup(this.ctx.storage,state);return json({name:route.name,points:count,checkpointsPreserved:!!sameGeometry,elevationSource,elevationWarning});
     }
     if(path==="/control") {
@@ -206,7 +201,7 @@ export class Tracker {
       state={since:now,captureAt:now,until:data.enabled?now+hours*3600:0,point:null,distanceMeters:0,distanceVersion:2,historyVersion:1,trailVersion:2,trackStep:TRACK_STEP};
       await this.ctx.storage.put("state",state);
       await this.ctx.storage.delete("track");
-      await this.ctx.storage.put("runSettings",data.enabled?{hours,raceStart:state.since}:savedSettings);await saveSetup(this.ctx.storage,state);
+      await this.ctx.storage.put("runSettings",data.enabled?{hours,raceStart:state.since}:savedSettings);
       if(data.enabled) await this.ctx.storage.setAlarm(state.until*1000);
       else await this.ctx.storage.deleteAlarm();
       return json({enabled:data.enabled,expiresAt:state.until||null});

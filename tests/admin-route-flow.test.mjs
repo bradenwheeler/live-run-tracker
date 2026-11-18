@@ -22,8 +22,8 @@ const fetch=async(path,options={})=>{
   return {ok:true,status:200,json:async()=>result};
 };
 vm.runInNewContext(admin.match(/<script>([\s\S]*)<\/script>/)[1],{document:{getElementById:get,querySelectorAll:()=>[],createElement:()=>new Element()},window:{addEventListener(){}},location:{origin:'https://test.example'},fetch,AbortSignal,confirm:()=>false});
-assert.equal(get('gpxPanel').hidden,true);assert.equal(get('selectedRouteActions').hidden,true);
-get('newRoute').onclick();assert.equal(get('gpxPanel').hidden,false);assert.equal(get('savedSetups').hidden,true);assert.equal(posts.length,0,'new route is only a draft');
+assert.equal(get('gpxPanel').hidden,true);assert.equal(get('selectedRouteActions').hidden,true);assert.ok(admin.indexOf('id="sessionControls"')<admin.indexOf('id="routeWorkspace"'),'session controls are outside the gated route workspace');get('hours').value='72';get('startTime').value='2026-11-17T09:00';
+get('newRoute').onclick();assert.equal(get('hours').value,'72');assert.equal(get('startTime').value,'2026-11-17T09:00');assert.equal(get('gpxPanel').hidden,false);assert.equal(get('savedSetups').hidden,true);assert.equal(posts.length,0,'new route is only a draft');
 await get('existingRoute').onclick();assert.equal(get('gpxPanel').hidden,true);assert.equal(get('savedSetups').hidden,false);assert.equal(get('selectedRouteActions').hidden,true);
 const before=posts.length;get('setupSelect').value='one';get('setupSelect').onchange();assert.equal(posts.length,before,'dropdown selection must not open route');assert.equal(get('selectedRouteActions').hidden,false);assert.equal(get('routeWorkspace').hidden,true);
 await get('openSetup').onclick();assert.ok(posts.some(p=>p.data.action==='load'));assert.equal(get('routeWorkspace').hidden,false);assert.equal(get('gpxPanel').hidden,true);
