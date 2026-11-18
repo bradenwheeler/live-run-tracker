@@ -19,7 +19,7 @@ assert.equal((await(await send('/checkpoints')).json())[0].name,'Second aid');
 await send('/control',{enabled:false});let loaded=await(await send('/setups',{action:'load',id:first})).json();assert.equal(loaded.active,false);assert.equal(loaded.settings.hours,72);assert.equal(loaded.settings.raceStart,started+60);
 assert.equal((await(await send('/route')).json()).fileName,'My Race.gpx');assert.equal((await(await send('/checkpoints')).json())[0].name,'Aid station');
 assert.equal((await(await send('/location')).json()).status,'paused');
-await send('/control',{enabled:true,hours:loaded.settings.hours,startedAt:loaded.settings.raceStart});const state=(await(await send('/location')).json());assert.equal(state.stats.startedAt,started+60);assert.equal(state.stats.expiresAt,now+72*3600);
+await send('/control',{enabled:true,hours:loaded.settings.hours,startedAt:loaded.settings.raceStart});const state=(await(await send('/location')).json());assert.equal(state.stats.startedAt,now);assert.equal(state.stats.expiresAt,now+72*3600);
 await send('/control',{enabled:false});obj=new Tracker({storage,blockConcurrencyWhile:f=>f()});assert.equal((await presets()).items.length,2);
 await send('/setups',{action:'delete',id:second});assert.equal((await presets()).items.length,1);
 await send('/setups',{action:'delete',id:first});assert.equal((await presets()).items.length,0);assert.equal((await(await send('/route')).json()).fileName,'My Race.gpx');

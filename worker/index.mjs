@@ -200,10 +200,9 @@ export class Tracker {
       if(!data || typeof data.enabled!=="boolean") return json({error:"enabled must be boolean"},400);
       const savedSettings=await appliedSettings(this.ctx.storage,state);
       const hours=data.hours??savedSettings.hours??48;
-      if(data.enabled&&data.startedAt!==undefined&&(!Number.isInteger(data.startedAt)||data.startedAt<0||data.startedAt>now))return json({error:"The saved race start must be a valid past time."},400);
       if(data.enabled&&(!Number.isInteger(hours)||hours<1||hours>72))return json({error:"Choose a recording window between 1 and 72 hours."},400);
       await clearSession(this.ctx.storage);
-      state={since:data.enabled?(data.startedAt??now):now,captureAt:now,until:data.enabled?now+hours*3600:0,point:null,distanceMeters:0,distanceVersion:2,historyVersion:1,trailVersion:2,trackStep:TRACK_STEP};
+      state={since:now,captureAt:now,until:data.enabled?now+hours*3600:0,point:null,distanceMeters:0,distanceVersion:2,historyVersion:1,trailVersion:2,trackStep:TRACK_STEP};
       await this.ctx.storage.put("state",state);
       await this.ctx.storage.delete("track");
       await this.ctx.storage.put("runSettings",data.enabled?{hours,raceStart:state.since}:savedSettings);await saveSetup(this.ctx.storage,state);
