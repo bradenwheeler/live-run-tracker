@@ -118,7 +118,7 @@ try{
   const p=data.point;
   if(data.status==='paused'){clearPoint();clearTrack();$('badge').textContent='NOT SHARING';$('status').textContent='Paused';if(planned)$('overlay').hidden=true;else message(routeError?'Route unavailable — retrying':'Sharing is paused');return;}
   drawTrack(data.track||[],p);
-  if(data.status==='session-paused'){clearPoint();const last=(data.track||[]).at(-1);if(last)updateProgress(last);$('badge').textContent='PAUSED';$('status').textContent='Session paused';$('time').textContent=runStats?.lastFixAt?new Date(runStats.lastFixAt*1000).toLocaleTimeString():'—';if(planned||actual)$('overlay').hidden=true;else message('Session paused');return;}
+  if(data.status==='session-paused'){clearPoint();clearTrack();$('badge').textContent='PAUSED';$('status').textContent='Sharing paused';$('time').textContent='—';if(planned)$('overlay').hidden=true;else message('Sharing paused');return;}
   if(!p||Date.now()/1000-p.tst>900){clearPoint();$('badge').textContent='WAITING';$('status').textContent='Waiting for location';if(planned||actual)$('overlay').hidden=true;else message('Waiting for a fresh location');return;}
   point=p;updateProgress(p);$('overlay').hidden=true;$('badge').textContent=Date.now()/1000-p.tst>180?'LAST KNOWN':'SHARING';$('status').textContent=Date.now()/1000-p.tst>180?'Last known location':'Receiving updates';$('time').textContent=new Date(p.tst*1000).toLocaleTimeString();
   if(marker)marker.setLatLng([p.lat,p.lon]);else marker=L.circleMarker([p.lat,p.lon],{radius:9,color:'#13241e',weight:3,fillColor:'#6ed2a4',fillOpacity:1}).addTo(map);
