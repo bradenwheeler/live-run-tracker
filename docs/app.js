@@ -7,6 +7,8 @@ import {completedRoute} from './course-progress.mjs?v=1';
 import {renderElevation} from './elevation-profile.mjs?v=2';
 const $=id=>document.getElementById(id);
 const api=window.TRACKER_API?.replace(/\/$/,'');
+function setRouteVisibility(show){for(const node of document.querySelectorAll('[data-route-only]'))node.hidden=!show;$('route-heading').textContent=show?'Route data':'Session data';}
+setRouteVisibility(false);
 const map=L.map('map',{minZoom:1,maxZoom:19}).setView([20,0],2);
 // Keep recorded GPS below course overlays, even when the trail refreshes.
 map.createPane('liveGpsPane');map.getPane('liveGpsPane').style.zIndex='390';map.getPane('liveGpsPane').style.pointerEvents='none';
@@ -39,7 +41,7 @@ function updateProgress(location){
   L.polyline([[location.lat,location.lon],match.position],{color:'#dfb873',weight:2,dashArray:'4 5',opacity:.9,interactive:false}).addTo(progressLayer);
   L.circleMarker(match.position,{radius:4,color:'#dfb873',weight:2,fillColor:'#17211f',fillOpacity:1}).bindTooltip('Nearest route point · '+match.alongMiles.toFixed(2)+' mi along route').addTo(progressLayer);
 }
-function clearPlanned(){if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();endpointLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];routeProfile=null;clearProgress();}
+function clearPlanned(){setRouteVisibility(false);if(planned)map.removeLayer(planned);planned=null;mileLayer.clearLayers();endpointLayer.clearLayers();checkpointLayer.clearLayers();checkpointMarkers.clear();routeSegments=[];routeProfile=null;clearProgress();}
 let marker,circle,point,busy=false,planned=null,actual=null,routeVersion,hasFitted=false,track=[];
 let checkpoints=[],runStats=null,statsReceivedAt=0,retryTimer=null,failures=0;
 function retrySoon(){clearTimeout(retryTimer);retryTimer=setTimeout(refresh,retryDelay(++failures));}
@@ -108,7 +110,7 @@ async function syncRoute(version){
   if(version===routeVersion)return;
   const route=await trackerRequest(api+'/route');
   clearPlanned();
-  if(route){routeSegments=route.segments;routeProfile=route;renderElevation($('elevationProfile'),$('elevationCurrent'),routeProfile,null);drawEndpoints(route.segments);planned=L.polyline(route.segments,{color:'#a5a0f5',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
+  if(route){setRouteVisibility(true);routeSegments=route.segments;routeProfile=route;renderElevation($('elevationProfile'),$('elevationCurrent'),routeProfile,null);drawEndpoints(route.segments);planned=L.polyline(route.segments,{color:'#a5a0f5',weight:3,dashArray:'7 6',opacity:.8}).addTo(map);const miles=mileMarkers(route.segments);for(const checkpoint of miles.markers){L.marker(checkpoint.position,{icon:L.divIcon({className:'mile-marker',html:'<span>'+checkpoint.mile+'</span>',iconSize:[32,24],iconAnchor:[16,12]}),keyboard:true,title:'Mile '+checkpoint.mile,zIndexOffset:500}).bindTooltip('Mile '+checkpoint.mile+' along planned route').addTo(mileLayer);}$('routeName').textContent=route.name+' · '+miles.totalMiles.toFixed(1)+' mi'+(miles.truncated?' · first 1,000 mile markers shown':'');$('routeFit').disabled=false;routeVersion=route.version;if(!hasFitted){map.fitBounds(planned.getBounds(),{padding:[35,35],maxZoom:16});hasFitted=true;}}
   else{routeVersion=null;$('routeName').textContent='No planned route';$('routeFit').disabled=true;}
 }
 async function refresh(){if(busy||document.hidden)return;if(!api){message('Tracker setup in progress');$('status').textContent='Not connected yet';return;}busy=true;clearTimeout(retryTimer);

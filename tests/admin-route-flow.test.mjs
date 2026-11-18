@@ -30,5 +30,6 @@ await get('openSetup').onclick();assert.ok(posts.some(p=>p.data.action==='load')
 await get('pause').onclick();assert.equal(get('resume').disabled,false);assert.equal(get('pause').disabled,true);await get('resume').onclick();assert.equal(get('resume').disabled,true);assert.equal(get('pause').disabled,false);
 await get('duplicateSetup').onclick();assert.equal(get('setupSelect').value,'copy');assert.equal(get('routeWorkspace').hidden,true);assert.equal(get('selectedRouteActions').hidden,false);
 get('newRoute').onclick();assert.equal(get('selectedRouteActions').hidden,true);assert.equal(get('gpxPanel').hidden,false);
+await get('openSession').onclick();assert.equal(get('gpxPanel').hidden,true);assert.equal(get('savedSetups').hidden,true);assert.equal(get('routeWorkspace').hidden,true);assert.ok(posts.some(p=>p.path==='/session'&&p.data.action==='open'));
 assert.ok(admin.indexOf('id="token"')<admin.indexOf('id="routeChooser"'));
 console.log('Route flow visibility, explicit Open, duplication selection and token placement passed');
