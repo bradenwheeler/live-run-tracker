@@ -1,3 +1,4 @@
+import {readTrack,MAX_TRACK_POINTS} from './track-storage.mjs';
 import {inPause,crossesPause} from './session-pauses.mjs';
 import {edgeDistance} from './run-metrics.mjs';
 export async function rawEntries(storage){
@@ -6,7 +7,7 @@ export async function rawEntries(storage){
   return entries;
 }
 export async function readFixes(storage,state){
-  const points=[...(await storage.get('legacyFixes')||[]),...(await storage.get('track')||[])];
+  const points=[...(await storage.get('legacyFixes')||[]),...(await readTrack(storage))];
   if(state.point)points.push(state.point);
   for(const bucket of (await rawEntries(storage)).values())points.push(...bucket);
   const unique=new Map(points.filter(p=>p.tst>=(state.captureAt||state.since)).map(p=>[p.tst,p]));
@@ -16,9 +17,10 @@ export async function readFixes(storage,state){
 export function rebuildRun(fixes,start,step){
   const eligible=fixes.filter(p=>p.tst>=start);let distanceMeters=0;const track=[];
   for(let i=0;i<eligible.length;i++){const p=eligible[i];if(i)distanceMeters+=edgeDistance(eligible[i-1],p);if(!track.length||p.breakBefore||p.tst-track.at(-1).tst>=step)track.push({lat:p.lat,lon:p.lon,tst:p.tst,...(p.breakBefore?{breakBefore:true}:{})});}
-  return {point:eligible.at(-1)||null,distanceMeters,distanceVersion:2,track:track.slice(-1440)};
+  return {point:eligible.at(-1)||null,distanceMeters,distanceVersion:2,track:track.slice(-MAX_TRACK_POINTS)};
 }
 export async function clearSession(storage){
-  const keys=['state','track','legacyFixes','checkpointCrossings',...(await rawEntries(storage)).keys()];
+  const trail=await storage.list({prefix:'trail:'});
+  const keys=['state','track','trailInfo','legacyFixes','checkpointCrossings',...trail.keys(),...(await rawEntries(storage)).keys()];
   for(let i=0;i<keys.length;i+=128)await storage.delete(keys.slice(i,i+128));
 }

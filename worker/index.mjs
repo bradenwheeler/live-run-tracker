@@ -1,3 +1,4 @@
+import {TRACK_STEP,readTrack,readTrackTail,writeTrack,appendTrack} from './track-storage.mjs';
 import {hasElevations,terrainElevations} from './terrain-elevation.mjs';
 import {inPause,crossesPause} from './session-pauses.mjs';
 import {appliedSettings,saveSetup,setupKey} from "./saved-setups.mjs";
@@ -40,10 +41,16 @@ export class Tracker {
     let state=await this.ctx.storage.get("state")||{until:0,since:0,point:null};
     if(state.until<=now && (state.point||state.until)){await clearSession(this.ctx.storage);state={until:0,since:0,point:null};}
     if(state.until>now&&state.historyVersion!==1){
-      const legacy=await this.ctx.storage.get("track")||[];if(state.point)legacy.push(state.point);
+      const legacy=await readTrack(this.ctx.storage);if(state.point)legacy.push(state.point);
       await this.ctx.storage.put("legacyFixes",legacy);
-      state.captureAt=state.since;state.historyVersion=1;state.trackStep=Math.max(30,Math.ceil((state.until-state.captureAt)/1440));
+      state.captureAt=state.since;state.historyVersion=1;state.trackStep=TRACK_STEP;
       await this.ctx.storage.put("state",state);
+    }
+    if(state.until>now&&state.trailVersion!==2){
+      state.trackStep=TRACK_STEP;
+      const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),state.since,TRACK_STEP);
+      state={...state,point:rebuilt.point,distanceMeters:rebuilt.distanceMeters,distanceVersion:2,historyDirty:false,trailVersion:2};
+      await writeTrack(this.ctx.storage,rebuilt.track);await this.ctx.storage.put('state',state);
     }
     if(path==="/checkpoint-map-data"){
       const route=await this.ctx.storage.get("route"),items=(await this.ctx.storage.get("checkpoints"))?.items||[];
@@ -53,14 +60,14 @@ export class Tracker {
     if(path==="/checkpoints"&&req.method==="GET")return json((await this.ctx.storage.get("checkpoints"))?.items||[]);
     if(path==="/location") {
       if(state.historyDirty){
-        const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),state.since,state.trackStep||30);
+        const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),state.since,state.trackStep||TRACK_STEP);
         state={...state,point:rebuilt.point,distanceMeters:rebuilt.distanceMeters,distanceVersion:2,historyDirty:false};
-        await this.ctx.storage.put("state",state);await this.ctx.storage.put("track",rebuilt.track);
+        await this.ctx.storage.put("state",state);await writeTrack(this.ctx.storage,rebuilt.track);
       }
       const point=state.point && now-state.point.tst<=900 ? state.point : null;
       const route=await this.ctx.storage.get("route");
       if(route&&!(await this.ctx.storage.get("setupIndex")))await saveSetup(this.ctx.storage,state);
-      const track=state.until>now ? await this.ctx.storage.get("track")||[] : [];
+      const track=state.until>now ? await readTrack(this.ctx.storage) : [];
       return json({status:state.until<=now?"paused":state.pausedAt!=null?"session-paused":point?"live":"waiting",point:state.until>now&&state.pausedAt==null?point:null,track,checkpoints:await checkpointView(this.ctx.storage,state,route,await this.ctx.storage.get("checkpoints"),now),stats:state.until>now?{paused:state.pausedAt!=null,startedAt:state.since,recordingSince:state.captureAt||state.since,distanceComplete:state.since>=(state.captureAt||state.since),expiresAt:state.until,distanceMeters:measuredDistance(state,null,track),lastFixAt:state.point?.tst||null,serverTime:now}:null,routeVersion:route?.version||null});
     }
     const text=await req.text();let data;
@@ -141,19 +148,19 @@ export class Tracker {
       if(!Number.isInteger(data.hours)||data.hours<1||data.hours>72)return json({error:"Choose 1–72 hours."},400);
       const until=(state.captureAt||state.since)+data.hours*3600;
       if(until<=now)return json({error:"That window would already have ended. Choose a longer window."},400);
-      state.until=until;state.trackStep=Math.max(30,Math.ceil(data.hours*3600/1440));
+      state.until=until;state.trackStep=TRACK_STEP;
       const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),state.since,state.trackStep);
       state.point=rebuilt.point;state.distanceMeters=rebuilt.distanceMeters;state.distanceVersion=2;state.historyDirty=false;
-      await this.ctx.storage.put("track",rebuilt.track);
+      await writeTrack(this.ctx.storage,rebuilt.track);
       await this.ctx.storage.put("state",state);await this.ctx.storage.setAlarm(until*1000);await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));await saveSetup(this.ctx.storage,state);
     }
     if(path==="/session")return json({active:state.until>now,paused:state.until>now&&state.pausedAt!=null,startedAt:state.until>now?state.since:null,recordingSince:state.until>now?state.captureAt:null,expiresAt:state.until>now?state.until:null,serverTime:now});
     if(path==="/start-time"){
       if(state.until<=now)return json({error:"Start recording before editing the race start."},409);
       if(!Number.isInteger(data?.startedAt)||data.startedAt<0||data.startedAt>now)return json({error:"Choose a valid start date and time in the past."},400);
-      const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),data.startedAt,state.trackStep||30);
+      const rebuilt=rebuildRun(await readFixes(this.ctx.storage,state),data.startedAt,state.trackStep||TRACK_STEP);
       state={...state,since:data.startedAt,point:rebuilt.point,distanceMeters:rebuilt.distanceMeters,distanceVersion:2,historyDirty:false};
-      await this.ctx.storage.put("state",state);await this.ctx.storage.put("track",rebuilt.track);
+      await this.ctx.storage.put("state",state);await writeTrack(this.ctx.storage,rebuilt.track);
       await this.ctx.storage.put("runSettings",await appliedSettings(this.ctx.storage,state));await saveSetup(this.ctx.storage,state);
       return json({startedAt:state.since,expiresAt:state.until,pointsIncluded:rebuilt.track.length});
     }
@@ -196,7 +203,7 @@ export class Tracker {
       if(data.enabled&&data.startedAt!==undefined&&(!Number.isInteger(data.startedAt)||data.startedAt<0||data.startedAt>now))return json({error:"The saved race start must be a valid past time."},400);
       if(data.enabled&&(!Number.isInteger(hours)||hours<1||hours>72))return json({error:"Choose a recording window between 1 and 72 hours."},400);
       await clearSession(this.ctx.storage);
-      state={since:data.enabled?(data.startedAt??now):now,captureAt:now,until:data.enabled?now+hours*3600:0,point:null,distanceMeters:0,distanceVersion:2,historyVersion:1,trackStep:Math.max(30,Math.ceil(hours*3600/1440))};
+      state={since:data.enabled?(data.startedAt??now):now,captureAt:now,until:data.enabled?now+hours*3600:0,point:null,distanceMeters:0,distanceVersion:2,historyVersion:1,trailVersion:2,trackStep:TRACK_STEP};
       await this.ctx.storage.put("state",state);
       await this.ctx.storage.delete("track");
       await this.ctx.storage.put("runSettings",data.enabled?{hours,raceStart:state.since}:savedSettings);await saveSetup(this.ctx.storage,state);
@@ -216,16 +223,16 @@ export class Tracker {
     bucket.push(fix);await this.ctx.storage.put(key,bucket);
     if(fix.tst<state.since)return json([]);
     await ingestCheckpointFix(this.ctx.storage,state,fix);
-    let track=await this.ctx.storage.get("track")||[];
+    let track=await readTrackTail(this.ctx.storage);
     if(state.point&&fix.tst<=state.point.tst){
       // Batch late/offline arrivals: rebuild once on the next public refresh.
       state.historyDirty=true;await this.ctx.storage.put("state",state);return json([]);
     }else{
       state.distanceMeters=measuredDistance(state,fix,track);state.point=fix;
-      if(!track.length||fix.breakBefore||fix.tst-track.at(-1).tst>=(state.trackStep||30))track.push({lat:fix.lat,lon:fix.lon,tst:fix.tst,...(fix.breakBefore?{breakBefore:true}:{})});
+      if(!track.length||fix.breakBefore||fix.tst-track.at(-1).tst>=(state.trackStep||TRACK_STEP))await appendTrack(this.ctx.storage,{lat:fix.lat,lon:fix.lon,tst:fix.tst,...(fix.breakBefore?{breakBefore:true}:{})});
     }
     state.distanceVersion=2;
-    await this.ctx.storage.put("state",state);await this.ctx.storage.put("track",track.slice(-1440));
+    await this.ctx.storage.put("state",state);
     return json([]);
   });}
   async alarm(){return this.ctx.blockConcurrencyWhile(async()=>{

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {writeTrack,MAX_TRACK_POINTS} from '../worker/track-storage.mjs';
 import worker,{Tracker} from '../worker/index.mjs';
 import {admin as adminHtml} from '../worker/admin.mjs';
 import {parseGpxSource} from '../worker/gpx.mjs';
@@ -62,9 +63,9 @@ await send('/control',{enabled:true},admin);
 await send('/pub',fix,phone);
 assert.equal((await latest()).track.length,1);
 assert.equal((await latest()).track[0].lat,0);
-store.set('state',{until:now+100,since:now-100,point:{...fix,tst:now-30}});
-store.set('track',Array.from({length:1440},(_,i)=>({lat:0,lon:0,tst:now-30*(1440-i)})));
-await send('/pub',fix,phone);assert.equal((await latest()).track.length,1440);
+store.set('state',{until:now+100,since:now-1000000,captureAt:now-1000000,historyVersion:1,trailVersion:2,trackStep:10,distanceVersion:2,distanceMeters:0,point:{...fix,tst:now-30}});
+await writeTrack(ctx.storage,Array.from({length:MAX_TRACK_POINTS},(_,i)=>({lat:0,lon:0,tst:now-10*(MAX_TRACK_POINTS-i)})));
+await send('/pub',fix,phone);assert.equal((await latest()).track.length,MAX_TRACK_POINTS);
 await send('/control',{enabled:false},admin);
 assert.equal((await latest()).track.length,0);
 assert.equal((await (await send('/route')).json()).name,'Test route');
