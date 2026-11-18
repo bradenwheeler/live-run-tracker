@@ -6,12 +6,12 @@ let obj=new Tracker({storage,blockConcurrencyWhile:f=>f()});const env={ADMIN_TOK
 const send=(path,data,auth=admin)=>worker.fetch(new Request('https://test.example'+path,{method:data===undefined?'GET':'POST',headers:{Authorization:auth},body:data===undefined?undefined:JSON.stringify(data)}),env);
 await send('/route',{name:'Saved course',fileName:'Course.gpx',segments:[[[0,0],[0,.1]]]});await send('/checkpoints',{name:'Aid',mile:1});const saved=values.get('activeSetup');
 assert.equal((await send('/session',{action:'open',hours:72},phone)).status,401);
-assert.equal((await send('/session',{action:'open',hours:99})).status,400);assert.ok(values.get('route'));
+
 await send('/control',{enabled:true,hours:72});now+=100;await send('/pub',{_type:'location',lat:0,lon:.01,tst:now},phone);
 const state=JSON.stringify(values.get('state')),settings=JSON.stringify(values.get('runSettings'));const before=await(await send('/location')).json();
 await send('/session',{action:'open',hours:1});let view=await(await send('/location')).json();
 assert.equal(await(await send('/route')).json(),null);assert.equal(view.routeVersion,null);assert.equal(view.checkpoints.length,0);assert.equal(view.track.length,before.track.length);assert.equal(JSON.stringify(values.get('state')),state);assert.equal(JSON.stringify(values.get('runSettings')),settings);assert.ok(values.get('setup:'+saved));assert.equal(values.get('setup:'+saved).checkpoints.length,1);
-await send('/session',{action:'pause'});await send('/session',{action:'open',hours:1});assert.equal((await(await send('/session',{})).json()).paused,false);assert.equal((await(await send('/session',{})).json()).expiresAt,before.stats.expiresAt);
-await send('/control',{enabled:false});now+=100;await send('/session',{action:'open',hours:48});view=await(await send('/location')).json();assert.equal(view.stats.startedAt,now);assert.equal(view.stats.expiresAt,now+48*3600);assert.equal(view.track.length,0);assert.equal(view.routeVersion,null);
+await send('/session',{action:'pause'});await send('/session',{action:'open',hours:1});assert.equal((await(await send('/session',{})).json()).paused,true);assert.equal((await(await send('/session',{})).json()).expiresAt,before.stats.expiresAt);
+await send('/control',{enabled:false});now+=100;await send('/session',{action:'open',hours:48});view=await(await send('/location')).json();assert.equal(view.stats,null);assert.equal(view.track.length,0);assert.equal(view.routeVersion,null);await send('/control',{enabled:true,hours:48});
 await send('/setups',{action:'load',id:saved});assert.ok((await(await send('/location')).json()).routeVersion);assert.equal((await(await send('/session',{})).json()).startedAt,now);
-Date.now=realNow;console.log('GPS-only open session authentication, active preservation, paused resume, new-session start and saved-route retention passed');
+Date.now=realNow;console.log('GPS-only open session authentication, active preservation, paused and inactive state preservation and saved-route retention passed');

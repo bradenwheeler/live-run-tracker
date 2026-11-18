@@ -135,14 +135,7 @@ export class Tracker {
       config.version=crypto.randomUUID();await this.ctx.storage.put("checkpoints",config);await saveSetup(this.ctx.storage,state);return json(config.items);
     }
     if(path==="/session"&&data?.action==='open'){
-      if(state.until<=now){
-        const hours=data.hours??(await appliedSettings(this.ctx.storage,state)).hours??48;
-        if(!Number.isInteger(hours)||hours<1||hours>72)return json({error:"Choose a recording window between 1 and 72 hours."},400);
-        await clearSession(this.ctx.storage);
-        state={since:now,captureAt:now,until:now+hours*3600,point:null,distanceMeters:0,distanceVersion:2,historyVersion:1,trailVersion:2,trackStep:TRACK_STEP};
-        await this.ctx.storage.put('runSettings',{hours,raceStart:now});await this.ctx.storage.setAlarm(state.until*1000);
-      }else if(state.pausedAt!=null){state.pauseIntervals=[...(state.pauseIntervals||[]),[state.pausedAt,now]];state.pausedAt=null;}
-      await this.ctx.storage.put('state',state);
+      // Open session is a route choice, not a session lifecycle action.
       for(const key of ['route','checkpoints','checkpointCrossings','activeSetup'])await this.ctx.storage.delete(key);
     }
     if(path==="/session"&&data?.action!==undefined&&data.action!=='open'){
